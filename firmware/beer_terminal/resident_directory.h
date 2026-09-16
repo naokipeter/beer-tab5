@@ -13,14 +13,20 @@ struct Entry {
   char name[24];
 };
 
+// Loads the persisted list, falling back to settings::default_residents when
+// nothing is stored or the stored blob is unusable.
 void begin();
+
+// Writes the list if it changed. Driven from the main loop, like the catalog.
+void flush();
 
 uint8_t count();
 const Entry* at(uint8_t index);
 
-// Replaces the whole list. Returns false and keeps the previous list if `n`
-// exceeds settings::max_residents or any entry is unusable, so a malformed
-// backend response cannot leave the device with no way to record a purchase.
+// Replaces the whole list and marks it for persisting. Returns false and keeps
+// the previous list if `n` exceeds settings::max_residents or any entry is
+// unusable, so a malformed backend response cannot leave the device with no way
+// to record a purchase.
 bool replace_all(const Entry* entries, uint8_t n);
 
 // True once replace_all has succeeded at least once, i.e. the list on screen

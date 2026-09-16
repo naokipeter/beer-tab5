@@ -20,7 +20,20 @@ struct Product {
   bool active;           // false = archived, hidden from the grid.
 };
 
+// Loads the persisted catalog. Falls back to a compiled-in seed when nothing is
+// stored yet or the stored blob is unusable; milestone 7 replaces that seed with
+// a fetch from the backend.
 void begin();
+
+// Writes the catalog if anything changed since the last call. Driven from the
+// main loop rather than from the UI event that made the change, so a flash write
+// never blocks a touch response.
+void flush();
+bool dirty();
+
+// Backend catalog revision this device last synced. 0 means never synced.
+uint32_t revision();
+void set_revision(uint32_t r);
 
 // Active products, in catalog order. These are what the grid shows.
 uint8_t active_count();

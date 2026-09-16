@@ -30,6 +30,8 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 | `ui_screens` | One builder per state; rebuilt on transition, never per frame, 3 |
 | `ui_fonts`, `ui_keyboard` | German-capable font subsets and QWERTZ layout, 3 |
 | `catalog_layout` | Pure adaptive-grid geometry for both grids; host-tested, 3 |
+| `catalog_codec` | On-disk format, versioned and CRC-checked; host-tested, 6 |
+| `device_storage` | LittleFS mount and atomic writes, 6 |
 | `product_catalog` | Bounded catalog with archive/restore, revision sync, 6 |
 | `resident_directory` | Resident list from the backend, compiled-in fallback, 3/7 |
 | `purchase_log` | Consumption tally behind the summary screen, 3/8 |

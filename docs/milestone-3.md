@@ -20,7 +20,7 @@ sleep implementation yet; those stay in their later milestones.
 | `font_de_*.c`, `ui_fonts.h`, `tools/generate-fonts.sh` | Montserrat subsets carrying the German and Swiss-French letters. LVGL's built-in fonts are ASCII-only, which is why umlauts were missing. |
 | `ui_keyboard.h/.cpp` | German QWERTZ layout with umlaut keys, so a name like "Feldschlösschen" can be typed as well as displayed. |
 | `ui_lvgl.h` | Includes LVGL and asserts major version 9, so an LVGL 8 sketchbook copy reports itself instead of producing dozens of rename errors. |
-| `tests/test_catalog_layout.cpp`, `tools/test-layout.sh` | Host test for the grid rule. |
+| `tests/test_catalog_layout.cpp`, `tools/test.sh` | Host test for the grid rule. |
 
 `settings.h` gained the screen metrics, the resident list, the theme and the
 prototype's simulated latencies. Residents are placeholders and must be replaced
@@ -90,7 +90,7 @@ that an empty catalog does not produce degenerate geometry.
 |---|---|---:|---:|
 | `./tools/build.sh` (C++17) | PASS | 907,094 bytes | 36,504 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
-| `./tools/test-layout.sh` | PASS | all checks | host binary |
+| `./tools/test.sh` | PASS | all checks | host binary |
 
 Static RAM excludes the two 1280 x 40 PSRAM draw buffers (102,400 bytes each),
 LVGL's runtime heap and stacks. No inference about final memory fit should be
@@ -140,7 +140,7 @@ reproduction of the IDE's layout:
 
 Host, no hardware:
 
-    ./tools/test-layout.sh      # grid rule and bounds
+    ./tools/test.sh             # grid rule, bounds and persistence format
     ./tools/build.sh            # firmware, pinned C++17
 
 On the Tab5, after uploading (see README for the port-independent upload command):
@@ -210,4 +210,4 @@ On the Tab5, after uploading (see README for the port-independent upload command
 - Admin lists prices read-only. Editing, archive and restore are milestone 11.
 - The host toolchain on this machine has a stale `CommandLineTools/usr/include/c++/v1`
   containing three files, which shadows the SDK's libc++ and breaks any host C++
-  build. `tools/test-layout.sh` detects this and falls back to the SDK copy.
+  build. `tools/test.sh` detects this and falls back to the SDK copy.

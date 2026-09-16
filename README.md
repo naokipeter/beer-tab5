@@ -1,9 +1,10 @@
 # Tab5 beer terminal
 
-Milestone 3: the LVGL interface and the explicit state machine, driven by a mock
-catalog of eight beers. Milestones 1 and 2 are confirmed working on the device.
-There is no camera, networking, backend deployment, offline queue or sleep
-implementation yet.
+Milestone 6: the catalog and resident list persist across reboots on LittleFS.
+Milestone 3 built the LVGL interface and the explicit state machine. Milestones 1
+to 3 are confirmed working on the device. There is no camera, networking, backend
+deployment, offline queue or sleep implementation yet; the catalog is still
+seeded from a compiled-in mock.
 
 The Tab5 camera is not reachable from the Arduino framework — verified by
 compilation, see [the hardware audit](docs/hardware-audit.md). Barcode capture
@@ -84,10 +85,11 @@ after changing the glyph set — it needs Node and the installed lvgl library.
 
 ## Host checks
 
-`./tools/test-layout.sh` builds and runs the catalog grid geometry on the Mac —
-no Tab5 and no Arduino toolchain needed. It asserts the layout for one to eight
-products, that tiles stay inside the margins and clear of the header and footer,
-and that a partial last row is centred.
+`./tools/test.sh` builds and runs the host test suites on the Mac — no Tab5 and
+no Arduino toolchain needed. It covers the adaptive grid geometry (layout for one
+to eight products, tiles inside the margins and clear of the header and footer, a
+centred partial row) and the persistence format (round trip, and rejection of
+corrupted, truncated, foreign and over-capacity blobs).
 
 ## Physical verification — milestone 3
 
@@ -148,7 +150,7 @@ The firmware stays awake: battery current and wake latency have not been measure
 
 - `firmware/beer_terminal/`: sketch, state machine, catalog, LVGL port and screens,
   `lv_conf.h`, centralized settings, secrets example.
-- `tests/`, `tools/test-layout.sh`: host test for the adaptive catalog grid.
+- `tests/`, `tools/test.sh`: host tests for the grid geometry and the persistence format.
 - `arduino-cli.yaml`, `tools/`: official package URL, pinned setup, build and example checks.
 - `docs/`: hardware/API findings, proposed architecture, compilation evidence.
 - `backend/README.md`: reserved backend scope for milestone 8.

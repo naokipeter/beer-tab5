@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "catalog_layout.h"
+#include "device_storage.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -723,9 +724,25 @@ void build_admin() {
   snprintf(src, sizeof(src), "%u Bewohner (%s)",
            static_cast<unsigned>(resident_directory::count()),
            resident_directory::from_backend() ? "vom Server" : "lokale Vorgabe");
-  lv_obj_t* sl = make_label(scr, src, settings::theme::text_muted,
-                            &font_de_20);
+  lv_obj_t* sl = make_label(scr, src, settings::theme::text_muted, &font_de_20);
   lv_obj_set_pos(sl, settings::grid_margin, y + 40);
+
+  // Storage state, so persistence can be judged on the device rather than
+  // inferred from the serial log.
+  char store[128];
+  if (device_storage::mounted()) {
+    snprintf(store, sizeof(store), "Speicher: %u kB frei, Revision %lu%s",
+             static_cast<unsigned>(device_storage::free_bytes() / 1024),
+             static_cast<unsigned long>(product_catalog::revision()),
+             product_catalog::dirty() ? ", ungesichert" : ", gesichert");
+  } else {
+    snprintf(store, sizeof(store), "Speicher nicht eingebunden - nichts wird gesichert");
+  }
+  lv_obj_t* stl = make_label(scr, store,
+                             device_storage::mounted() ? settings::theme::text_muted
+                                                       : settings::theme::danger,
+                             &font_de_20);
+  lv_obj_set_pos(stl, settings::grid_margin, y + 70);
 
   lv_obj_t* sw_label = make_label(scr, "Nächsten Fehler simulieren",
                                   settings::theme::text_muted, &font_de_20);

@@ -1,0 +1,172 @@
+// Host test for the persistence format. Build and run with tools/test-codec.sh.
+#include "../firmware/beer_terminal/catalog_codec.h"
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+namespace {
+
+int g_failures = 0;
+
+void check(bool ok, const char* what) {
+  if (ok) {
+    std::printf("  ok %s\n", what);
+  } else {
+    std::printf("FAIL %s\n", what);
+    ++g_failures;
+  }
+}
+
+product_catalog::Product make(const char* barcode, const char* name, int32_t rappen,
+                              bool free_item, bool active, const char* url) {
+  product_catalog::Product p{};
+  std::snprintf(p.barcode, sizeof(p.barcode), "%s", barcode);
+  std::snprintf(p.name, sizeof(p.name), "%s", name);
+  p.price_rappen = rappen;
+  p.free_item = free_item;
+  p.active = active;
+  std::snprintf(p.image_url, sizeof(p.image_url), "%s", url);
+  return p;
+}
+
+bool same(const product_catalog::Product& a, const product_catalog::Product& b) {
+  return std::strcmp(a.barcode, b.barcode) == 0 && std::strcmp(a.name, b.name) == 0 &&
+         a.price_rappen == b.price_rappen && a.free_item == b.free_item &&
+         a.active == b.active && std::strcmp(a.image_url, b.image_url) == 0;
+}
+
+}  // namespace
+
+int main() {
+  std::printf("catalog persistence format\n");
+
+  std::vector<product_catalog::Product> in;
+  in.push_back(make("7610807000019", "Feldschlösschen Original", 180, false, true,
+                    "https://images.openfoodfacts.org/x/front_de.4.400.jpg"));
+  in.push_back(make("7613300000086", "Turbinenbräu Gassenhauer", 0, true, false, ""));
+  // A name and URL that exactly fill their fields, to catch an off-by-one in the
+  // terminator handling.
+  in.push_back(make("1234567890128", std::string(39, 'N').c_str(), 9999, false, true,
+                    std::string(159, 'u').c_str()));
+
+  std::vector<uint8_t> buf(catalog_codec::max_catalog_bytes());
+  const size_t len = catalog_codec::encode_catalog(
+      in.data(), static_cast<uint8_t>(in.size()), 42, buf.data(), buf.size());
+  check(len > 0, "encode returns a length");
+
+  product_catalog::Product out[settings::max_products]{};
+  uint8_t count = 0;
+  uint32_t revision = 0;
+  check(catalog_codec::decode_catalog(buf.data(), len, out, settings::max_products,
+                                      &count, &revision),
+        "round trip decodes");
+  check(count == in.size(), "record count survives");
+  check(revision == 42, "revision survives");
+  bool all_same = count == in.size();
+  for (uint8_t i = 0; i < count && all_same; ++i) all_same = same(in[i], out[i]);
+  check(all_same, "every field survives, including umlauts and full-width strings");
+
+  // Corruption must be rejected, not half-applied.
+  {
+    std::vector<uint8_t> bad = buf;
+    bad[len / 2] ^= 0x01;
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
+                                         &c, nullptr),
+          "a single flipped payload bit is rejected");
+  }
+  {
+    std::vector<uint8_t> bad = buf;
+    bad[8] ^= 0x01;  // revision field, inside the CRC's coverage
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
+                                         &c, nullptr),
+          "a flipped header bit is rejected");
+  }
+  {
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(buf.data(), len - 1, out,
+                                         settings::max_products, &c, nullptr),
+          "a truncated blob is rejected");
+  }
+  {
+    std::vector<uint8_t> bad = buf;
+    bad[0] ^= 0xFF;
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
+                                         &c, nullptr),
+          "a foreign file is rejected on its magic");
+  }
+  {
+    std::vector<uint8_t> bad = buf;
+    bad[4] = 99;  // unknown format version
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
+                                         &c, nullptr),
+          "an unknown format version is rejected");
+  }
+  {
+    // A blob holding more records than this build can hold must not overrun.
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(buf.data(), len, out, 1, &c, nullptr),
+          "a blob exceeding capacity is rejected");
+  }
+  {
+    // A rejected decode must leave the caller's count untouched.
+    uint8_t c = 123;
+    catalog_codec::decode_catalog(buf.data(), len - 1, out, settings::max_products, &c,
+                                  nullptr);
+    check(c == 123, "a rejected decode does not write out_count");
+  }
+
+  // Empty catalog is a legitimate state: every beer archived away.
+  {
+    std::vector<uint8_t> e(catalog_codec::max_catalog_bytes());
+    const size_t n = catalog_codec::encode_catalog(in.data(), 0, 7, e.data(), e.size());
+    uint8_t c = 9;
+    uint32_t rev = 0;
+    check(n > 0 && catalog_codec::decode_catalog(e.data(), n, out,
+                                                 settings::max_products, &c, &rev) &&
+              c == 0 && rev == 7,
+          "an empty catalog round trips");
+  }
+
+  // A buffer one byte too small must refuse rather than overrun.
+  {
+    std::vector<uint8_t> small(len - 1);
+    check(catalog_codec::encode_catalog(in.data(), static_cast<uint8_t>(in.size()), 1,
+                                        small.data(), small.size()) == 0,
+          "encoding into too small a buffer refuses");
+  }
+
+  std::printf("\nresidents\n");
+  resident_directory::Entry rin[3]{};
+  std::snprintf(rin[0].id, sizeof(rin[0].id), "r1");
+  std::snprintf(rin[0].name, sizeof(rin[0].name), "Naoki");
+  std::snprintf(rin[1].id, sizeof(rin[1].id), "r2");
+  std::snprintf(rin[1].name, sizeof(rin[1].name), "Miriam");
+  std::snprintf(rin[2].id, sizeof(rin[2].id), "r3");
+  std::snprintf(rin[2].name, sizeof(rin[2].name), "Jörg");
+
+  std::vector<uint8_t> rbuf(catalog_codec::max_residents_bytes());
+  const size_t rlen = catalog_codec::encode_residents(rin, 3, rbuf.data(), rbuf.size());
+  resident_directory::Entry rout[settings::max_residents]{};
+  uint8_t rcount = 0;
+  check(rlen > 0 && catalog_codec::decode_residents(rbuf.data(), rlen, rout,
+                                                    settings::max_residents, &rcount),
+        "residents round trip");
+  check(rcount == 3 && std::strcmp(rout[2].name, "Jörg") == 0,
+        "resident names survive, including umlauts");
+
+  // The two blob kinds must not be interchangeable.
+  {
+    uint8_t c = 0;
+    check(!catalog_codec::decode_catalog(rbuf.data(), rlen, out, settings::max_products,
+                                         &c, nullptr),
+          "a residents blob is not accepted as a catalog");
+  }
+
+  std::printf(g_failures ? "\n%d failure(s)\n" : "\nall checks passed\n", g_failures);
+  return g_failures ? 1 : 0;
+}

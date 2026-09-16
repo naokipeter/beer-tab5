@@ -6,6 +6,7 @@
 #include <M5Unified.h>
 
 #include "app_state.h"
+#include "device_storage.h"
 #include "display_ui.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
@@ -26,6 +27,7 @@ void setup() {
   M5.begin(cfg);
   Serial.begin(settings::serial_baud);
 
+  device_storage::begin();
   product_catalog::begin();
   resident_directory::begin();
   purchase_log::begin();
@@ -51,5 +53,8 @@ void loop() {
   M5.update();
   app_state::update(millis());
   display_ui::update();
+  // Persist off the UI event path, so a flash write never delays a touch.
+  product_catalog::flush();
+  resident_directory::flush();
   delay(5);
 }
