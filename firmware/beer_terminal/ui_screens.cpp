@@ -55,6 +55,17 @@ lv_obj_t* make_panel(lv_obj_t* parent, int16_t x, int16_t y, int16_t w, int16_t 
   return o;
 }
 
+lv_obj_t* make_container(lv_obj_t* parent) {
+  lv_obj_t* o = lv_obj_create(parent);
+  lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(o, 0, 0);
+  lv_obj_set_style_radius(o, 0, 0);
+  lv_obj_set_style_pad_all(o, 0, 0);
+  lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
+  return o;
+}
+
 lv_obj_t* make_label(lv_obj_t* parent, const char* text, uint32_t colour,
                      const lv_font_t* font) {
   lv_obj_t* l = lv_label_create(parent);
@@ -225,10 +236,15 @@ void build_footer_single(lv_obj_t* scr, const char* text, Event ev, uint32_t bg,
               on_event_button, as_ud(static_cast<uintptr_t>(ev)));
 }
 
-// Shared product tile, used by the catalog and the archived list.
+// Shared product tile, used by the catalog and the archived list. The contents
+// are a flex stack centred in the tile rather than pinned to its edges, so a
+// short name does not leave a gap between the name and the price.
 void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
                         const GridGeometry& g, int16_t x, int16_t y,
                         lv_event_cb_t cb, void* ud, bool dim) {
+  constexpr int16_t kPad = 14;
+  constexpr int16_t kGap = 10;
+
   lv_obj_t* tile = lv_button_create(scr);
   lv_obj_set_pos(tile, x, y);
   lv_obj_set_size(tile, g.tile_w, g.tile_h);
@@ -236,14 +252,43 @@ void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
   lv_obj_set_style_radius(tile, 6, 0);
   lv_obj_set_style_border_width(tile, 0, 0);
   lv_obj_set_style_shadow_width(tile, 0, 0);
-  lv_obj_set_style_pad_all(tile, 14, 0);
+  lv_obj_set_style_pad_all(tile, kPad, 0);
   if (cb) lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, ud);
+
+  const int16_t content_w = static_cast<int16_t>(g.tile_w - 2 * kPad);
+  const int16_t content_h = static_cast<int16_t>(g.tile_h - 2 * kPad);
+  const lv_font_t* name_font =
+      font_for(static_cast<int16_t>(fminf(g.tile_h * 0.11f, 26.0f)));
+  const lv_font_t* price_font =
+      font_for(static_cast<int16_t>(fminf(g.tile_h * 0.15f, 34.0f)));
+
+  lv_obj_t* body = make_container(tile);
+  lv_obj_set_size(body, content_w, content_h);
+  lv_obj_center(body);
+  lv_obj_set_flex_align(body, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+
+  // The photo takes whatever the text does not need, so a two-line name can
+  // never push the price out of the tile.
+  int16_t photo;
+  if (g.horizontal_card) {
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(body, kPad, 0);
+    photo = static_cast<int16_t>(fminf(content_h, content_w * 0.45f));
+  } else {
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(body, kGap, 0);
+    const int16_t text_h =
+        static_cast<int16_t>(2 * lv_font_get_line_height(name_font) +
+                             lv_font_get_line_height(price_font));
+    photo = static_cast<int16_t>(content_h - text_h - 2 * kGap);
+    photo = static_cast<int16_t>(fminf(photo, content_w * 0.62f));
+  }
+  if (photo < 48) photo = 48;
 
   // Photo placeholder. Milestone 6 swaps this for the cached Open Food Facts
   // image; the deterministic colour stays as the no-photo fallback.
-  const int16_t photo = static_cast<int16_t>(fminf(
-      g.horizontal_card ? g.tile_h * 0.72f : g.tile_h * 0.52f, g.tile_w * 0.62f));
-  lv_obj_t* img = make_panel(tile, 0, 0, photo, photo,
+  lv_obj_t* img = make_panel(body, 0, 0, photo, photo,
                              product_catalog::fallback_colour(p));
   lv_obj_set_style_radius(img, 4, 0);
   if (dim) lv_obj_set_style_bg_opa(img, LV_OPA_40, 0);
@@ -253,32 +298,38 @@ void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
   lv_obj_set_style_text_opa(il, LV_OPA_70, 0);
   lv_obj_center(il);
 
+  // In a wide tile the text sits in its own centred column beside the photo.
+  lv_obj_t* text_parent = body;
+  if (g.horizontal_card) {
+    lv_obj_t* column = make_container(body);
+    lv_obj_set_flex_flow(column, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(column, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(column, kGap, 0);
+    lv_obj_set_flex_grow(column, 1);
+    lv_obj_set_height(column, LV_SIZE_CONTENT);
+    text_parent = column;
+  }
+
   char price[32];
   product_catalog::format_price(p, price, sizeof(price));
-  const int16_t name_px = static_cast<int16_t>(fminf(g.tile_h * 0.11f, 26.0f));
-  const int16_t price_px = static_cast<int16_t>(fminf(g.tile_h * 0.15f, 34.0f));
 
-  lv_obj_t* name = make_label(tile, p.name,
+  lv_obj_t* name = make_label(text_parent, p.name,
                               dim ? settings::theme::text_muted : settings::theme::text,
-                              font_for(name_px));
+                              name_font);
   lv_label_set_long_mode(name, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(name, g.horizontal_card ? lv_pct(100) : content_w);
+  lv_obj_set_style_text_align(
+      name, g.horizontal_card ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER, 0);
+
   lv_obj_t* cost = make_label(
-      tile, price,
+      text_parent, price,
       dim ? settings::theme::text_muted
           : (p.free_item ? settings::theme::ok : settings::theme::accent),
-      font_for(price_px));
-
-  if (g.horizontal_card) {
-    lv_obj_align(img, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_width(name, g.tile_w - photo - 28 - 14);
-    lv_obj_align(name, LV_ALIGN_LEFT_MID, photo + 14, -price_px / 2);
-    lv_obj_align(cost, LV_ALIGN_LEFT_MID, photo + 14, name_px);
-  } else {
-    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_width(name, g.tile_w - 28);
-    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, photo + 12);
-    lv_obj_align(cost, LV_ALIGN_BOTTOM_MID, 0, 0);
+      price_font);
+  if (!g.horizontal_card) {
+    lv_obj_set_width(cost, content_w);
+    lv_obj_set_style_text_align(cost, LV_TEXT_ALIGN_CENTER, 0);
   }
 }
 

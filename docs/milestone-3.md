@@ -80,7 +80,7 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 906,530 bytes | 36,496 bytes |
+| `./tools/build.sh` (C++17) | PASS | 906,794 bytes | 36,496 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
