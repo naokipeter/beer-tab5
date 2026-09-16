@@ -46,6 +46,12 @@ lv_obj_t* make_panel(lv_obj_t* parent, int16_t x, int16_t y, int16_t w, int16_t 
   lv_obj_set_style_radius(o, 6, 0);
   lv_obj_set_style_pad_all(o, 0, 0);
   lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+  // lv_obj_create sets LV_OBJ_FLAG_CLICKABLE on every base object, so a
+  // decorative panel would absorb the press instead of letting it reach the
+  // button underneath. Labels remove the flag themselves, which is why a tile's
+  // text used to respond while its photo did not. Callers that want a panel to
+  // be tappable add the flag back explicitly.
+  lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
   return o;
 }
 

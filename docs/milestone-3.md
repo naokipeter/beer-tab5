@@ -68,7 +68,7 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 905,578 bytes | 36,496 bytes |
+| `./tools/build.sh` (C++17) | PASS | 905,586 bytes | 36,496 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
@@ -127,7 +127,10 @@ On the Tab5, after uploading (see README for the port-independent upload command
 
 1. The catalog shows two tiles side by side, each with a coloured placeholder,
    name and price.
-2. Tap a tile. The header shows the product and price; seven resident buttons and
+2. Tap a tile **on its photo square**, not just its text. The whole tile is one
+   target: `lv_obj_create` sets `LV_OBJ_FLAG_CLICKABLE` on every base object, so
+   the photo panel used to swallow the press while the labels, which clear that
+   flag themselves, passed it through. `make_panel` now clears it too. The header shows the product and price; seven resident buttons and
    `Bier archivieren` appear as a 2 x 4 grid.
 3. Tap a name. A spinner shows for about 0.8 s, then a green `Gebucht` screen names
    the resident and product.
