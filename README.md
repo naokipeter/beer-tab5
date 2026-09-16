@@ -28,7 +28,12 @@ Boards/Library Managers. LVGL reads the sketch-local `lv_conf.h`; the
 **The IDE and the CLI use different library folders.** Arduino IDE reads your
 sketchbook (`~/Documents/Arduino/libraries`), while `tools/build.sh` reads the
 project-local `.arduino/user/libraries`. Installing or upgrading a library for
-one does not affect the other. LVGL in particular renamed most of its API
+one does not affect the other, so a milestone that adds a dependency builds on
+the CLI and fails in the IDE with a missing header.
+
+Run **`./tools/setup-ide.sh`** to install the whole pinned set into the
+sketchbook, then restart the IDE so it re-reads its library index. It keeps the
+same list as `tools/setup.sh`. LVGL in particular renamed most of its API
 between 8 and 9, so an older sketchbook copy produces dozens of
 "not declared in this scope" errors; `ui_lvgl.h` turns that into a single
 explicit message. In the IDE, open Library Manager, find lvgl, and select

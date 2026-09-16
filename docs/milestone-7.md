@@ -24,7 +24,9 @@ falls back to the simulated path only when no backend is configured. The admin
 screen reports Wi-Fi state, signal and time since the last sync.
 
 Dependency added: **ArduinoJson 7.4.3**, pinned in `tools/setup.sh` and checked
-by `tools/build.sh`. A hand-rolled encoder was the alternative and was rejected:
+by `tools/build.sh`. Arduino IDE reads a different library folder, so
+`tools/setup-ide.sh` installs the same pinned set into the sketchbook; without it
+the IDE fails with a missing `ArduinoJson.h` while the CLI build succeeds. A hand-rolled encoder was the alternative and was rejected:
 product names contain quotes and umlauts, which is exactly where hand-rolled
 JSON escaping goes wrong.
 
