@@ -1,7 +1,9 @@
-# Proposed structure — not implemented beyond milestone 1
+# Proposed structure — milestone 2 display/touch test implemented
 
 Keep the Arduino sketch thin. Add modules under `firmware/beer_terminal/src/`
-(Arduino CLI compiles this subtree), each with an explicit public header:
+(Arduino CLI compiles this subtree), each with an explicit public header.
+The current small `display_ui.h/.cpp` diagnostic lives beside the sketch for
+easy Arduino IDE access; replace its internals with the LVGL adapter in milestone 3:
 
 | Module | Responsibility / milestone |
 |---|---|

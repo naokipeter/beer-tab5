@@ -1,6 +1,7 @@
 # Tab5 beer terminal
 
-Milestone 1 only: a reproducible Arduino CLI build and a minimal boot screen.
+Milestone 2: display and touchscreen verification, rotated 180 degrees from the
+original landscape orientation. Milestone 1 upload worked on the user's device.
 There is no scanner, purchasing UI, networking, backend deployment or sleep implementation yet.
 See [the hardware audit](docs/hardware-audit.md) for the camera blocker and
 [the architecture proposal](docs/architecture.md) for subsequent milestones.
@@ -57,7 +58,24 @@ v3.00 or newer, build with `CHIP_VARIANT=postv3 ./tools/build.sh` and use the ma
 variant when uploading. Do not force-flash a binary rejected for chip revision.
 No serial port is stored in configuration.
 
-## Physical verification (not performed)
+## Physical verification — milestone 2
+
+In Arduino IDE, reopen `firmware/beer_terminal/beer_terminal.ino` and click Upload
+using the same settings that worked for milestone 1. No new libraries are needed.
+Turn the device 180 degrees from its previous position. The text should now be
+upright. Tap the four blue corner buttons: only the touched corner should turn
+green and show OK. After all four, the status should read "All corners OK".
+Drag a finger inside the central outlined area: the cyan dot should follow it
+without mirroring or offset. Tap "Start again" to clear the results and repeat.
+Serial Monitor at 115200 baud reports dimensions, touch availability and each
+corner hit. Report orientation, corner response and dot alignment before the
+LVGL milestone; this is the requested hardware-observation gate.
+
+The rotation is centralized in `settings.h` (`display_rotation = 3`, previously 1).
+M5Unified automatically transforms touch coordinates with the display rotation.
+This test remains awake; it does not test sleep or wake from touch.
+
+### Optional CLI upload
 
 1. Connect Tab5 over a USB data cable. Run `./tools/arduino.sh board list`.
 2. Set `TAB5_PORT` to its reported port, and `CHIP_VARIANT` to `prev3` or `postv3`.
@@ -72,14 +90,14 @@ CHIP_VARIANT="$CHIP_VARIANT" ./tools/build.sh
 ./tools/arduino.sh monitor --port "$TAB5_PORT" --config baudrate=115200
 ```
 
-4. Verify the white milestone text appears on a black landscape screen, serial
-   heartbeat appears every five seconds, and PSRAM is detected. If the initial
+4. Verify the touch test described above, serial heartbeat every five seconds,
+   and PSRAM detection. If the initial
    serial message is missed while USB enumerates, reset with the monitor open.
 5. Report screen output, PSRAM, chip revision and any resets. Display and touch
    examples have separate build directories; compile success does not verify
    real display revisions or touch calibration.
 
-Stop here for confirmation before milestone 2 and any hardware-dependent work.
+Stop here for confirmation of milestone 2 before further hardware-dependent work.
 The firmware stays awake: battery current and wake latency have not been measured.
 
 ## Files added
