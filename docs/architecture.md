@@ -102,10 +102,18 @@ column stores the 400 px URL directly and nothing needs server-side resizing.
 `esp_driver_jpeg` ships in the P4 SDK, so decode is hardware-accelerated.
 
 The phone `manage` page resolves the OFF image at registration time and writes the
-URL to the sheet. On catalog sync the device fetches each new or changed image **once**,
-caches the bytes to LittleFS as `/img/<barcode>.jpg`, and re-fetches only when that
-product's `updated_at` changes. Decode into PSRAM on grid build, never per frame —
-worst case is about 184 KB of RGB565 at N=2, where photos are largest.
+URL to the sheet. **The device does not yet fetch or render them**: `image_url` is
+synced, validated and stored, but every tile shows the deterministic colour.
+
+Displaying them needs four things that do not exist yet: `LV_USE_TJPGD` enabled,
+image draw buffers redirected to PSRAM through `lv_draw_buf_get_image_handlers`,
+a download path to a second TLS host streaming straight to LittleFS as
+`/img/<key>.jpg`, and cache invalidation keyed on the product's `updated_at`.
+
+The size of the stored variant is the trade-off. A 400 px image decodes to
+320 KB of RGB565, more than the free internal RAM, so decoded buffers must live
+in PSRAM whichever variant is chosen; a 200 px image decodes to 80 KB and is
+sharp enough for every tile except the full-width single-beer one.
 
 Constraints:
 

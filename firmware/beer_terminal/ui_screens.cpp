@@ -321,8 +321,11 @@ void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
   }
   if (photo < 48) photo = 48;
 
-  // Photo placeholder. Milestone 6 swaps this for the cached Open Food Facts
-  // image; the deterministic colour stays as the no-photo fallback.
+  // Photo placeholder. Product images are not fetched or rendered yet, even
+  // when image_url is populated by the sync: that needs a JPEG decoder, a
+  // download-and-cache path and decoded buffers in PSRAM. The deterministic
+  // colour is what every tile shows today, and remains the fallback for the
+  // many beers Open Food Facts has no photo for.
   lv_obj_t* img = make_panel(body, 0, 0, photo, photo,
                              product_catalog::fallback_colour(p));
   lv_obj_set_style_radius(img, 4, 0);
