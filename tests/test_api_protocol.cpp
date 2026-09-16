@@ -251,6 +251,26 @@ int main() {
           "a rejected void surfaces as rejected");
   }
   {
+    // A fault in the script is not a verdict on the request. Treating it as one
+    // would discard a drink because the server was briefly broken.
+    bool dup = false;
+    const char* body =
+        "{\"ok\":false,\"retry\":true,"
+        "\"error\":\"requireDeviceToken_ is not defined\"}";
+    check(api_protocol::parse_ack(body, std::strlen(body), &dup, err, sizeof(err)) ==
+              api_protocol::Outcome::ServerError,
+          "a server fault asks to be retried, not dropped");
+    check(std::strcmp(err, "requireDeviceToken_ is not defined") == 0,
+          "the server's reason still reaches the screen");
+  }
+  {
+    bool dup = false;
+    const char* body = "{\"ok\":false,\"retry\":false,\"error\":\"Unbekannte Person\"}";
+    check(api_protocol::parse_ack(body, std::strlen(body), &dup, err, sizeof(err)) ==
+              api_protocol::Outcome::Rejected,
+          "an explicit retry:false stays permanent");
+  }
+  {
     bool dup = false;
     check(api_protocol::parse_ack("", 0, &dup, err, sizeof(err)) ==
               api_protocol::Outcome::Malformed,

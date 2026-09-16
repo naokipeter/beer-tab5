@@ -62,7 +62,8 @@ struct SyncResult {
 enum class Outcome : uint8_t {
   Ok,
   Malformed,     // not JSON, or missing the fields the action requires
-  Rejected,      // ok:false, with a message in `error`
+  Rejected,      // ok:false and permanent: the same request would fail again
+  ServerError,   // ok:false but the backend asked us to retry; keep the entry
   TooManyItems,  // more products or residents than this build can hold
 };
 

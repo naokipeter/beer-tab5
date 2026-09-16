@@ -235,6 +235,11 @@ void update(uint32_t now_ms) {
     // the next periodic sync. Pull fresh figures instead.
     g_last_sync = 0;
     finish(Result::Success, "");
+  } else if (outcome == api_protocol::Outcome::ServerError) {
+    // The script broke, not the request. Keep the transaction and back off.
+    Serial.printf("[backend] server fault, keeping the transaction: %s\n", err);
+    note_send_failure(now_ms);
+    finish(Result::Unreachable, err[0] ? err : "Serverfehler");
   } else if (outcome == api_protocol::Outcome::Rejected) {
     // The backend understood and refused. Retrying the same bytes would be
     // refused the same way, so stop carrying it.

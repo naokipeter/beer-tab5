@@ -102,6 +102,12 @@ The device is on a kitchen wall and its token could leak, so nothing is trusted:
 - the resident must exist and be active
 - the shelf cap, so the terminal's grid is never sent more than it can show
 
+Responses distinguish a refusal from a fault. A validation failure returns
+`{ok: false, error: ...}` and the terminal drops the transaction, because
+retrying it unchanged would fail identically. An **exception** inside the script
+returns `{ok: false, retry: true, ...}` and the terminal keeps the transaction
+queued — a broken or half-deployed script must not cost anyone a drink.
+
 `recordPurchase` checks the transaction id and appends under one `LockService`
 lock, and the check reads the sheet rather than a cache. A retry after a timeout
 therefore returns `{ok: true, duplicate: true}` instead of a second row.

@@ -196,7 +196,9 @@ Outcome parse_ack(const char* body, size_t len, bool* duplicate, char* error,
     put_error(error, error_capacity, doc["error"].is<const char*>()
                                          ? doc["error"].as<const char*>()
                                          : "Server hat abgelehnt");
-    return Outcome::Rejected;
+    // The backend distinguishes a fault in itself from a verdict on the
+    // request. Only the latter justifies dropping a recorded drink.
+    return doc["retry"].as<bool>() ? Outcome::ServerError : Outcome::Rejected;
   }
   if (duplicate) *duplicate = doc["duplicate"].as<bool>();
   return Outcome::Ok;
