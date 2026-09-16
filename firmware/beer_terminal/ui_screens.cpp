@@ -484,7 +484,9 @@ void build_submitting() {
 void build_success() {
   lv_obj_t* scr = build_root();
   const app_state::Context& ctx = app_state::context();
-  lv_obj_set_style_bg_color(scr, col(settings::theme::ok), 0);
+  lv_obj_set_style_bg_color(scr, col(ctx.undone ? settings::theme::surface_alt
+                                                : settings::theme::ok),
+                            0);
 
   const resident_directory::Entry* r =
       ctx.resident_index >= 0
@@ -493,15 +495,39 @@ void build_success() {
   char line[128];
   snprintf(line, sizeof(line), "%s: %s", r ? r->name : "?", ctx.product_name);
 
-  lv_obj_t* big = make_label(scr, "Gebucht", 0xFFFFFF, &font_de_48);
-  lv_obj_align(big, LV_ALIGN_CENTER, 0, -90);
+  lv_obj_t* big = make_label(scr, ctx.undone ? "Rückgängig gemacht" : "Gebucht",
+                             0xFFFFFF, &font_de_48);
+  lv_obj_align(big, LV_ALIGN_CENTER, 0, ctx.undone ? -40 : -90);
   lv_obj_t* l = make_label(scr, line, 0xFFFFFF, &font_de_32);
-  lv_obj_align(l, LV_ALIGN_CENTER, 0, -20);
+  lv_obj_align(l, LV_ALIGN_CENTER, 0, ctx.undone ? 30 : -20);
 
-  // Offered, not forced: ignoring it returns to the catalog on its own.
-  make_button(scr, "Übersicht anzeigen", (settings::screen_w - 520) / 2,
-              settings::screen_h / 2 + 60, 520, 84, 0xFFFFFF, settings::theme::ok,
-              on_event_button, as_ud(static_cast<uintptr_t>(Event::ShowSummary)));
+  // A reversal is already final, so it offers nothing further and clears itself.
+  if (ctx.undone) return;
+
+  // Both are optional: ignoring them returns to the catalog on its own. Undo sits
+  // on the left, away from the summary button, so a reflex tap cannot reverse a
+  // purchase by accident.
+  const int16_t bw = 460;
+  const int16_t gap = 24;
+  const int16_t by = settings::screen_h / 2 + 60;
+  const int16_t left = (settings::screen_w - (2 * bw + gap)) / 2;
+  make_button(scr, "Rückgängig", left, by, bw, 84, settings::theme::surface,
+              0xFFFFFF, on_event_button,
+              as_ud(static_cast<uintptr_t>(Event::Undo)));
+  make_button(scr, "Übersicht anzeigen", left + bw + gap, by, bw, 84, 0xFFFFFF,
+              settings::theme::ok, on_event_button,
+              as_ud(static_cast<uintptr_t>(Event::ShowSummary)));
+}
+
+void build_undoing() {
+  lv_obj_t* scr = build_root();
+  lv_obj_t* sp = lv_spinner_create(scr);
+  lv_obj_set_size(sp, 120, 120);
+  lv_obj_align(sp, LV_ALIGN_CENTER, 0, -60);
+  lv_obj_set_style_arc_color(sp, col(settings::theme::accent), LV_PART_INDICATOR);
+  lv_obj_t* l = make_label(scr, "Wird rückgängig gemacht...", settings::theme::text,
+                           &font_de_32);
+  lv_obj_align(l, LV_ALIGN_CENTER, 0, 60);
 }
 
 void build_summary() {
@@ -655,6 +681,7 @@ void show(State current) {
     case State::NewProduct:        build_new_product();     break;
     case State::SelectingUser:     build_resident();        break;
     case State::Submitting:        build_submitting();      break;
+    case State::Undoing:           build_undoing();         break;
     case State::Success:           build_success();         break;
     case State::Summary:           build_summary();         break;
     case State::Error:             build_error();           break;

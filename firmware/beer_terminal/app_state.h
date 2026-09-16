@@ -17,6 +17,7 @@ enum class State : uint8_t {
   SelectingArchived,  // restore an archived beer before offering the new form
   ConfirmArchive,     // confirm removing a beer from the fridge grid
   Submitting,
+  Undoing,            // reversing the purchase just recorded
   Success,
   Summary,            // consumption table, reached from the confirmation screen
   Error,
@@ -36,6 +37,9 @@ enum class Event : uint8_t {
   ShowSummary,
   SubmitSucceeded,
   SubmitFailed,
+  Undo,
+  UndoSucceeded,
+  UndoFailed,
   Retry,
   Cancel,
   Dwell,             // a timed screen finished
@@ -55,6 +59,10 @@ struct Context {
   int8_t archive_storage_index;  // product awaiting archive confirmation
   char transaction_id[24];
   char message[64];       // error detail shown in the UI
+  bool undone;            // the confirmation is acknowledging a reversal
+  // Which operation ERROR should retry. Retrying must never turn a failed undo
+  // back into a second submission.
+  bool undo_in_flight;
 };
 
 using ChangeHandler = void (*)(State previous, State current);

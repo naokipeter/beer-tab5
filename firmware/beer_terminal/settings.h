@@ -63,8 +63,11 @@ inline constexpr uint32_t danger = 0xC0392B;
 
 // Simulated backend latency for the milestone 3 prototype, in milliseconds.
 inline constexpr uint32_t mock_submit_ms = 800;
-// How long SUCCESS stays on screen before returning to the catalog.
-inline constexpr uint32_t success_dwell_ms = 2500;
+// How long SUCCESS stays on screen before returning to the catalog. This is the
+// whole undo window, so it has to be long enough to notice a mis-tap and react.
+inline constexpr uint32_t success_dwell_ms = 6000;
+// The shorter acknowledgement after an undo; there is nothing left to decide.
+inline constexpr uint32_t undo_dwell_ms = 2000;
 // How long the consumption summary stays up before returning on its own.
 inline constexpr uint32_t summary_dwell_ms = 15000;
 

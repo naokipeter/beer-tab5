@@ -39,9 +39,21 @@ the new-product form when there is nothing to restore, or when you press
 **Neues Bier anlegen**. The mock catalog therefore starts with two active beers,
 matching the usual stock, and six archived ones so the restore flow has content.
 
-The confirmation screen carries an **Ubersicht anzeigen** button. Ignoring it
-returns to the catalog as before; pressing it opens the consumption table, which
-also returns on its own after 15 seconds so the terminal never sits lit.
+The confirmation screen carries **Rückgängig** and **Übersicht anzeigen**.
+Ignoring both returns to the catalog on its own; the summary table also returns
+after 15 seconds, so the terminal never sits lit.
+
+Undo is the whole reason the confirmation now dwells for 6 seconds rather than
+2.5: that dwell *is* the undo window, and it has to be long enough to notice a
+mis-tap and react. The reversal runs through its own UNDOING state so milestone 8
+can put a real `voidPurchase` call where the simulated delay is, keeping the
+original `transaction_id` — the backend matches the reversal to the row it
+reverses. A failed undo retries the undo, never the submission before it, which
+is what `undo_in_flight` in the context is for. The acknowledgement afterwards is
+grey rather than green, offers nothing further, and clears in 2 seconds.
+
+Undo reverses the purchase, not the catalog: a beer registered through the ad hoc
+form stays on the grid, and is removed by archiving it.
 
 ## Grid rule, as tested
 
@@ -68,7 +80,7 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 905,586 bytes | 36,496 bytes |
+| `./tools/build.sh` (C++17) | PASS | 906,530 bytes | 36,496 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
@@ -134,24 +146,28 @@ On the Tab5, after uploading (see README for the port-independent upload command
    `Bier archivieren` appear as a 2 x 4 grid.
 3. Tap a name. A spinner shows for about 0.8 s, then a green `Gebucht` screen names
    the resident and product.
-4. On that screen, press `Ubersicht anzeigen`: the table lists each resident with a
-   drink count and total. It returns on its own after 15 s, or on `Zuruck`.
-   Ignoring the button instead returns to the catalog after 2.5 s.
-5. `Zuruck` from the resident screen returns to the catalog without recording.
-6. Tap a tile, then `Bier archivieren`. Confirm. The beer leaves the grid and the
+4. On that screen, press `Übersicht anzeigen`: the table lists each resident with
+   a drink count and total. It returns on its own after 15 s, or on `Zurück`.
+   Ignoring both buttons returns to the catalog after 6 s.
+5. Book another drink and press `Rückgängig`. A spinner shows briefly, then a grey
+   `Rückgängig gemacht` screen, which clears after 2 s. Open the summary again:
+   that resident's count and total must be back to what they were. Pressing undo
+   twice is impossible — the reversal screen has no buttons.
+6. `Zurück` from the resident screen returns to the catalog without recording.
+7. Tap a tile, then `Bier archivieren`. Confirm. The beer leaves the grid and the
    layout re-flows to a single full-width tile. `Abbrechen` on the confirmation
    must leave it in place.
-7. `Nicht gelistet` now lists the archived beers. Tapping one restores it to the
+8. `Nicht gelistet` now lists the archived beers. Tapping one restores it to the
    grid. `Neues Bier anlegen` reaches the ad hoc form: the name field raises the
    keyboard, the numeric pad composes a price capped at CHF 99.99, `C` clears,
    `Gratis` overrides the price, and `Weiter` is inert until a price or Gratis is set.
-8. Restore beers until eight are active. The archived screen must then refuse
+9. Restore beers until eight are active. The archived screen must then refuse
    further restores and say the fridge is full.
-9. Long-press the header to open Admin. It reports the active and archived counts
+10. Long-press the header to open Admin. It reports the active and archived counts
    and whether residents came from the backend or the local fallback. Enable
    `Nachsten Fehler simulieren`, go back, and complete a purchase: it must land on
    the error screen with a retry that keeps the same transaction ID (serial log).
-10. Serial at 115200 prints every transition as `[state] FROM -> TO`.
+11. Serial at 115200 prints every transition as `[state] FROM -> TO`.
 
 ## Requires the physical Tab5
 

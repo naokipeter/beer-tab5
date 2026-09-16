@@ -34,6 +34,18 @@ void record(const char* resident_id, const char* resident_name, int32_t rappen,
   t.total_rappen = free_item ? 0 : rappen;
 }
 
+bool unrecord(const char* resident_id, int32_t rappen, bool free_item) {
+  if (!resident_id || resident_id[0] == '\0') return false;
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (strcmp(g_tallies[i].resident_id, resident_id) != 0) continue;
+    if (g_tallies[i].drinks == 0) return false;
+    --g_tallies[i].drinks;
+    if (!free_item) g_tallies[i].total_rappen -= rappen;
+    return true;
+  }
+  return false;
+}
+
 uint8_t count() { return g_count; }
 
 const Tally* at(uint8_t index) {

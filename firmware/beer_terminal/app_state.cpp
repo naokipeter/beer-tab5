@@ -28,8 +28,14 @@ void enter(State next) {
     case State::Submitting:
       g_deadline = millis() + settings::mock_submit_ms;
       break;
+    case State::Undoing:
+      g_deadline = millis() + settings::mock_submit_ms;
+      break;
     case State::Success:
-      g_deadline = millis() + settings::success_dwell_ms;
+      // An acknowledged reversal needs no decision, so it clears faster than the
+      // confirmation that still offers undo.
+      g_deadline = millis() + (g_ctx.undone ? settings::undo_dwell_ms
+                                            : settings::success_dwell_ms);
       break;
     case State::Summary:
       // Long enough to read the table, but it still returns on its own so the
@@ -49,6 +55,8 @@ void reset_context() {
   g_ctx.product_index = -1;
   g_ctx.resident_index = -1;
   g_ctx.archive_storage_index = -1;
+  g_ctx.undone = false;
+  g_ctx.undo_in_flight = false;
 }
 
 void make_transaction_id() {
@@ -78,6 +86,7 @@ const char* state_name(State s) {
     case State::Sleeping:         return "SLEEPING";
     case State::Waking:           return "WAKING";
     case State::SelectingProduct: return "SELECTING_PRODUCT";
+    case State::Undoing:          return "UNDOING";
     case State::SelectingArchived: return "SELECTING_ARCHIVED";
     case State::ConfirmArchive:   return "CONFIRM_ARCHIVE";
     case State::Summary:          return "SUMMARY";
@@ -184,8 +193,16 @@ void dispatch(Event e) {
       else if (e == Event::SubmitFailed) enter(State::Error);
       break;
 
+    case State::Undoing:
+      if (e == Event::UndoSucceeded) enter(State::Success);
+      else if (e == Event::UndoFailed) enter(State::Error);
+      break;
+
     case State::Success:
-      if (e == Event::ShowSummary) enter(State::Summary);
+      if (e == Event::Undo && !g_ctx.undone) {
+        g_ctx.undo_in_flight = true;
+        enter(State::Undoing);
+      } else if (e == Event::ShowSummary) enter(State::Summary);
       else if (e == Event::Dwell || e == Event::Cancel) {
         reset_context();
         enter(State::SelectingProduct);
@@ -201,8 +218,10 @@ void dispatch(Event e) {
 
     case State::Error:
       // The transaction ID survives a retry, so a submission that actually
-      // landed before the error cannot be recorded twice.
-      if (e == Event::Retry)       enter(State::Submitting);
+      // landed before the error cannot be recorded twice. A failed undo retries
+      // the undo, never the submission that preceded it.
+      if (e == Event::Retry)       enter(g_ctx.undo_in_flight ? State::Undoing
+                                                              : State::Submitting);
       else if (e == Event::Cancel) { reset_context(); enter(State::SelectingProduct); }
       break;
 
@@ -233,6 +252,23 @@ void update(uint32_t now_ms) {
         dispatch(Event::SubmitSucceeded);
       }
       break;
+    case State::Undoing: {
+      // From milestone 8 this is a void of transaction_id on the backend, which
+      // is why the ID is kept rather than regenerated: the server matches the
+      // reversal to the original row.
+      const resident_directory::Entry* r =
+          g_ctx.resident_index >= 0
+              ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+              : nullptr;
+      if (r) {
+        purchase_log::unrecord(r->id, g_ctx.price_rappen, g_ctx.free_item);
+      }
+      Serial.printf("[undo] transaction=%s\n", g_ctx.transaction_id);
+      g_ctx.undo_in_flight = false;
+      g_ctx.undone = true;
+      dispatch(Event::UndoSucceeded);
+      break;
+    }
     case State::Success:
     case State::Summary:
       dispatch(Event::Dwell);

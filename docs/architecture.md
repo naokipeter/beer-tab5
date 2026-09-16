@@ -47,9 +47,10 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 
 SLEEPING, WAKING, SELECTING_PRODUCT, LOOKING_UP, PRODUCT_FOUND,
 SELECTING_ARCHIVED, CONFIRM_ARCHIVE, NEW_PRODUCT, SELECTING_USER, SUBMITTING,
-SUCCESS, SUMMARY, ERROR, ADMIN.
+UNDOING, SUCCESS, SUMMARY, ERROR, ADMIN.
 
-Three states were added beyond the original list. SELECTING_ARCHIVED and
+Four states were added beyond the original list. UNDOING mirrors SUBMITTING so
+the reversal has somewhere to wait for the backend. SELECTING_ARCHIVED and
 CONFIRM_ARCHIVE exist because archiving replaced scanning as the way stock
 turns over, and both are destructive enough to deserve their own screen rather
 than a modal. SUMMARY is the consumption table reached from the confirmation.
@@ -147,7 +148,12 @@ and the screen says to archive something first.
 - Residents: `resident_id,name,active`
 
 Actions: `catalog`, `lookupProduct`, `createProduct`, `changePrice`,
-`archiveProduct`, `restoreProduct`, `recordPurchase`.
+`archiveProduct`, `restoreProduct`, `recordPurchase`, `voidPurchase`.
+
+`voidPurchase` takes the original `transaction_id` and marks that row reversed
+rather than deleting it, so the sheet keeps an auditable trail of what happened.
+It must be idempotent on the same id for the same reason `recordPurchase` is:
+the device may retry after a timeout that actually succeeded.
 
 Validate barcode/check digit, bounded sanitized names, integer prices, free/price
 consistency and resident/device authorization server-side. Keep auth tokens in
