@@ -5,7 +5,6 @@
 #include "api_protocol.h"
 #include "config.h"
 #include "product_catalog.h"
-#include "purchase_log.h"
 #include "resident_directory.h"
 #include "settings.h"
 #include "transaction_queue.h"
@@ -89,10 +88,6 @@ void apply_sync() {
                   api_client::response());
     return;
   }
-  // The summary arrives on every sync, so apply it before the revision check
-  // that short-circuits an unchanged catalog.
-  purchase_log::set_baseline(g_sync.summary, g_sync.summary_count);
-
   if (!g_sync.changed && g_sync.revision == product_catalog::revision()) {
     Serial.printf("[sync] unchanged at revision %lu\n",
                   static_cast<unsigned long>(g_sync.revision));
@@ -231,9 +226,6 @@ void update(uint32_t now_ms) {
     if (duplicate) Serial.println("[backend] already recorded; treating as success");
     transaction_queue::pop();
     g_send_failures = 0;
-    // The drink has left the queue, so the summary would under-report it until
-    // the next periodic sync. Pull fresh figures instead.
-    g_last_sync = 0;
     finish(Result::Success, "");
   } else if (outcome == api_protocol::Outcome::Rejected) {
     // The backend understood and refused. Retrying the same bytes would be

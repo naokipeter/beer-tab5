@@ -148,59 +148,6 @@ int main() {
           "an over-long name is truncated to its field");
   }
 
-  std::printf("\nconsumption summary\n");
-  {
-    const char* body =
-        "{\"ok\":true,\"revision\":3,\"changed\":false,\"products\":[],"
-        "\"residents\":[],\"summary\":["
-        "{\"resident_id\":\"r1\",\"name\":\"Jörg\",\"drinks\":7,"
-        "\"total_rappen\":1260},"
-        "{\"resident_id\":\"r2\",\"name\":\"Miriam\",\"drinks\":2,"
-        "\"total_rappen\":0}]}";
-    api_protocol::SyncResult s2{};
-    const auto o = api_protocol::parse_sync(body, std::strlen(body), &s2, err, sizeof(err));
-    check(o == api_protocol::Outcome::Ok, "a sync carrying only a summary parses");
-    check(!s2.changed && s2.summary_count == 2,
-          "the summary arrives even when the catalog is unchanged");
-    check(std::strcmp(s2.summary[0].resident_name, "Jörg") == 0 &&
-              s2.summary[0].drinks == 7 && s2.summary[0].total_rappen == 1260,
-          "drinks and totals survive");
-    check(s2.summary[1].drinks == 2 && s2.summary[1].total_rappen == 0,
-          "a resident who only drank free beer survives");
-  }
-  {
-    // A negative count would underflow the unsigned tally and show a huge number.
-    const char* body =
-        "{\"ok\":true,\"revision\":1,\"products\":[],\"residents\":[],"
-        "\"summary\":[{\"resident_id\":\"r1\",\"name\":\"X\","
-        "\"drinks\":-5,\"total_rappen\":10}]}";
-    api_protocol::SyncResult s2{};
-    api_protocol::parse_sync(body, std::strlen(body), &s2, err, sizeof(err));
-    check(s2.summary_count == 1 && s2.summary[0].drinks == 0,
-          "a negative drink count is clamped rather than wrapping");
-  }
-  {
-    const char* body =
-        "{\"ok\":true,\"revision\":1,\"products\":[],\"residents\":[],"
-        "\"summary\":[{\"name\":\"Nobody\",\"drinks\":3}]}";
-    api_protocol::SyncResult s2{};
-    api_protocol::parse_sync(body, std::strlen(body), &s2, err, sizeof(err));
-    check(s2.summary_count == 0, "a summary row without a resident id is dropped");
-  }
-  {
-    std::string big = "{\"ok\":true,\"revision\":1,\"products\":[],"
-                      "\"residents\":[],\"summary\":[";
-    for (int i = 0; i < settings::max_residents + 1; ++i) {
-      if (i) big += ",";
-      big += "{\"resident_id\":\"r\",\"name\":\"X\",\"drinks\":1}";
-    }
-    big += "]}";
-    api_protocol::SyncResult s2{};
-    check(api_protocol::parse_sync(big.c_str(), big.size(), &s2, err, sizeof(err)) ==
-              api_protocol::Outcome::TooManyItems,
-          "more summary rows than this build can hold is rejected");
-  }
-
   std::printf("\nredirect targets\n");
   {
     using api_protocol::redirect_target_allowed;

@@ -50,8 +50,6 @@ bool full() { return g_count >= settings::max_queued_transactions; }
 
 const Entry* head() { return g_count ? &g_items[0] : nullptr; }
 
-const Entry* at(uint8_t index) { return index < g_count ? &g_items[index] : nullptr; }
-
 bool push(const Entry& entry) {
   if (full()) return false;
   g_items[g_count++] = entry;

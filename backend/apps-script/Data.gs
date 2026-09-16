@@ -71,42 +71,6 @@ function findResident_(residentId) {
   return null;
 }
 
-/**
- * Drinks and totals per resident, excluding voided purchases. Used by both the
- * device sync and the management page, so the two can never disagree.
- */
-function consumptionSummary_() {
-  var sh = purchasesSheet_();
-  var last = sh.getLastRow();
-  var out = [];
-  if (last < 2) return out;
-
-  var values = sh.getRange(2, 1, last - 1, PURCHASE_COLUMNS.length).getValues();
-  var iPrice = PURCHASE_COLUMNS.indexOf('price_rappen');
-  var iId = PURCHASE_COLUMNS.indexOf('resident_id');
-  var iName = PURCHASE_COLUMNS.indexOf('resident_name');
-  var iVoid = PURCHASE_COLUMNS.indexOf('voided_at');
-  var byId = {};
-
-  for (var i = 0; i < values.length; i++) {
-    if (values[i][iVoid]) continue;
-    var id = cleanText_(values[i][iId], 11) || '?';
-    if (!byId[id]) {
-      byId[id] = {
-        resident_id: id,
-        name: cleanText_(values[i][iName], 23) || id,
-        drinks: 0,
-        total_rappen: 0
-      };
-      out.push(byId[id]);
-    }
-    byId[id].drinks++;
-    byId[id].total_rappen += Number(values[i][iPrice]) || 0;
-  }
-  // The terminal can only show so many rows.
-  return out.slice(0, LIMITS.maxResidents);
-}
-
 /** 1-based sheet row of a transaction id, or 0. */
 function findPurchaseRow_(transactionId) {
   var sh = purchasesSheet_();

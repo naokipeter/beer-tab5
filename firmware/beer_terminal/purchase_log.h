@@ -2,16 +2,10 @@
 #include <stdint.h>
 #include "settings.h"
 
-// The consumption summary.
-//
-// The figures come from the backend, which is the only place that knows about
-// purchases made before this device booted, and are persisted so a restart shows
-// them even before the first sync completes.
-//
-// Transactions still waiting in the local queue are added on top, because the
-// backend cannot know about them yet. That keeps the total right without ever
-// double counting: an entry is either acknowledged by the server, and therefore
-// in its figures, or still in the queue, and therefore added here.
+// Running consumption tally behind the summary screen. Milestone 3 accumulates
+// it locally on each successful submission; from milestone 8 the authoritative
+// figures come from the Purchases sheet and this becomes the offline view of
+// what this device has recorded.
 namespace purchase_log {
 
 struct Tally {
@@ -23,18 +17,19 @@ struct Tally {
 
 void begin();
 
-// Replaces the baseline with the backend's figures and persists it.
-void set_baseline(const Tally* entries, uint8_t n);
-bool has_baseline();
+// Adds one drink for a resident. Unknown residents are appended while there is
+// room, so a purchase is never silently dropped from the summary.
+void record(const char* resident_id, const char* resident_name, int32_t rappen,
+            bool free_item);
 
-// Baseline plus everything still queued. This is what the summary screen shows.
-// Recomputed on demand; the queue is short and this runs once per screen build.
+// Reverses one recorded drink. Returns false when the resident has no drinks
+// left to reverse, so a repeated undo cannot drive a tally negative.
+bool unrecord(const char* resident_id, int32_t rappen, bool free_item);
+
 uint8_t count();
 const Tally* at(uint8_t index);
 
 uint16_t total_drinks();
 int32_t total_rappen();
-
-void flush();
 
 }  // namespace purchase_log

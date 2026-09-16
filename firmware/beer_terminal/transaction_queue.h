@@ -33,10 +33,6 @@ bool full();
 // Oldest entry still waiting, or nullptr.
 const Entry* head();
 
-// Indexed access, oldest first. The summary adds queued purchases to the
-// backend's figures.
-const Entry* at(uint8_t index);
-
 // Appends. Returns false when the queue is full: the caller must tell the user
 // rather than silently dropping either this purchase or an older one.
 bool push(const Entry& entry);

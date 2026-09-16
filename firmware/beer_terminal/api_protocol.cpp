@@ -120,10 +120,8 @@ Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,
 
   JsonArrayConst products = doc["products"].as<JsonArrayConst>();
   JsonArrayConst residents = doc["residents"].as<JsonArrayConst>();
-  JsonArrayConst summary = doc["summary"].as<JsonArrayConst>();
   if (products.size() > settings::max_products ||
-      residents.size() > settings::max_residents ||
-      summary.size() > settings::max_residents) {
+      residents.size() > settings::max_residents) {
     put_error(error, error_capacity, "Zu viele Eintraege");
     return Outcome::TooManyItems;
   }
@@ -134,7 +132,6 @@ Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,
   out->changed = doc["changed"].as<bool>();
   out->product_count = 0;
   out->resident_count = 0;
-  out->summary_count = 0;
 
   for (JsonObjectConst p : products) {
     product_catalog::Product& d = out->products[out->product_count];
@@ -158,20 +155,6 @@ Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,
     copy_sanitised(d.name, sizeof(d.name), r["name"].as<const char*>());
     if (d.id[0] == '\0' || d.name[0] == '\0') continue;
     ++out->resident_count;
-  }
-
-  for (JsonObjectConst r : summary) {
-    purchase_log::Tally& d = out->summary[out->summary_count];
-    d = purchase_log::Tally{};
-    copy_sanitised(d.resident_id, sizeof(d.resident_id),
-                   r["resident_id"].as<const char*>());
-    copy_sanitised(d.resident_name, sizeof(d.resident_name),
-                   r["name"].as<const char*>());
-    const int32_t drinks = r["drinks"].as<int32_t>();
-    d.drinks = drinks > 0 ? static_cast<uint16_t>(drinks) : 0;
-    d.total_rappen = r["total_rappen"].as<int32_t>();
-    if (d.resident_id[0] == '\0') continue;
-    ++out->summary_count;
   }
 
   return Outcome::Ok;
