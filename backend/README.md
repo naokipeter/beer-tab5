@@ -58,8 +58,14 @@ The terminal shows these plus one archive button, so keep it to 11 or fewer.
 
    | Deployment | Execute as | Who has access | Used by |
    |---|---|---|---|
-   | Terminal | Me | **Anyone** | the Tab5, which has no Google login |
-   | Management | Me | **Anyone with a Google account** | your phone |
+   | Terminal | **Me** | **Anyone** | the Tab5, which has no Google login |
+   | Management | **User accessing the web app** | **Anyone with a Google account** | your phone |
+
+   The management deployment must execute as the *user*, not as you. Under
+   "execute as me", `Session.getActiveUser().getEmail()` comes back empty for
+   ordinary Gmail accounts, so `requireAdmin_` would refuse everyone including
+   you. Executing as the caller also means each admin needs edit access to the
+   spreadsheet — share it with them, or keep yourself as the only admin.
 
 5. Put the **terminal** deployment's `/exec` URL and the same `DEVICE_TOKEN` into
    `firmware/beer_terminal/secrets.h` (copy `secrets.example.h`). Open the
@@ -73,8 +79,9 @@ editing `secrets.h` again.
 
 The terminal cannot sign in to Google, so its deployment must accept anonymous
 requests and rely on the token. The management page must not be anonymous — it
-edits prices — so its deployment requires a Google account, and `requireAdmin_`
-then has a real identity to check against `ADMIN_EMAILS`.
+edits prices — so its deployment requires a Google account and executes as the
+caller, which is what makes `Session.getActiveUser().getEmail()` return a real
+address for `requireAdmin_` to check against `ADMIN_EMAILS`.
 
 `doGet` guards the page as well: on the anonymous deployment
 `Session.getActiveUser().getEmail()` is empty, so that URL serves "Kein Zugriff"

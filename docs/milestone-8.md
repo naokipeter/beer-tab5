@@ -32,9 +32,11 @@ EAN-8 and UPC-A values.
 ## Two deployments, not one
 
 The terminal has no Google login, so its deployment must accept anonymous
-requests and rely on the device token. The management page edits prices, so its
-deployment must require a Google account — which is also what gives
-`requireAdmin_` a real identity to check against an allowlist.
+requests, execute as the owner and rely on the device token. The management page
+edits prices, so its deployment requires a Google account **and executes as the
+caller**: under "execute as me", `Session.getActiveUser().getEmail()` returns
+empty for ordinary Gmail accounts, and `requireAdmin_` would then refuse
+everyone. The cost is that each admin needs edit access to the spreadsheet.
 
 One deployment cannot be both, because access is a per-deployment setting. So the
 same project is deployed twice. `doGet` additionally refuses to serve the page
