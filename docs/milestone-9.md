@@ -32,6 +32,30 @@ an unknown person, an invalid barcode — is something a human has to act on, an
 retrying those bytes unchanged would fail identically, so the entry is dropped
 rather than carried forever.
 
+## Four outcomes of enqueueing, not two
+
+A queued transaction is not the same as a request in flight, and conflating the
+two produced a real bug: a purchase enqueued while a sync held the request slot
+was reported as stored, the state machine then polled a result nobody had set to
+`Pending`, read the *previous* attempt's error text and showed the error screen.
+
+`enqueue_purchase` therefore returns which of four things happened:
+
+| Outcome | Stored | Resolves by | Screen |
+|---|---|---|---|
+| `Watching` | yes | the backend's real answer | whatever it says |
+| `Deferred` | yes | timer | **Gebucht**, "wird nachgetragen" |
+| `Refused` | **no** | timer, forced to fail | the error |
+| `NoBackend` | n/a | timer | **Gebucht** (prototype) |
+
+`Refused` covers a full queue: nothing was stored, so claiming a booking would be
+a lie. The previous code returned the same "false" for a full queue as for an
+unconfigured device, which would have confirmed a drink that was never recorded
+anywhere.
+
+A stale message is also cleared when a resident is picked, so one attempt's error
+can never be attributed to the next.
+
 ## Undo of something never sent
 
 Undoing a purchase still sitting in the queue **removes that entry**. Nothing was

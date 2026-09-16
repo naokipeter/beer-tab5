@@ -26,9 +26,30 @@ bool g_fail_next_submit = false;
 // without secrets.h fully demonstrable.
 bool g_simulated = false;
 
+// What happened when a transaction was handed to the backend.
+enum class Enqueued : uint8_t {
+  Watching,  // a request is in flight; wait for its real result
+  Deferred,  // safely stored, but nothing is in flight to watch
+  Refused,   // not stored at all; the user has to be told
+  NoBackend, // unconfigured device; the simulated path demonstrates the flow
+};
+
 // Defined below; enter() runs before them.
-bool enqueue_purchase();
-bool enqueue_undo();
+Enqueued enqueue_purchase();
+Enqueued enqueue_undo();
+
+// Applies the outcome to the state that enter() is about to use. Deferred and
+// NoBackend both resolve on the timer; only Watching polls the backend.
+void apply_enqueued(Enqueued e) {
+  g_simulated = e != Enqueued::Watching;
+  g_ctx.deferred = e == Enqueued::Deferred;
+  if (e == Enqueued::Refused) {
+    // Reuse the simulated failure path so the timer lands on ERROR. Nothing was
+    // stored, so claiming a booking here would be a lie.
+    g_fail_next_submit = true;
+  }
+  g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
+}
 
 void enter(State next) {
   if (next == g_state) return;
@@ -39,12 +60,10 @@ void enter(State next) {
 
   switch (next) {
     case State::Submitting:
-      g_simulated = !enqueue_purchase();
-      g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
+      apply_enqueued(enqueue_purchase());
       break;
     case State::Undoing:
-      g_simulated = !enqueue_undo();
-      g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
+      apply_enqueued(enqueue_undo());
       break;
     case State::Success:
       // An acknowledged reversal needs no decision, so it clears faster than the
@@ -99,12 +118,12 @@ void reverse_locally() {
 // Writes the transaction to flash before anything is sent, so a power cut
 // between the tap and the acknowledgement cannot lose a drink. Returns false
 // only when there is no backend at all, or the queue is full.
-bool enqueue_purchase() {
-  if (!backend::configured()) return false;
+Enqueued enqueue_purchase() {
+  if (!backend::configured()) return Enqueued::NoBackend;
   if (transaction_queue::full()) {
     snprintf(g_ctx.message, sizeof(g_ctx.message),
              "Warteschlange voll - Terminal ans WLAN bringen");
-    return false;
+    return Enqueued::Refused;
   }
   const resident_directory::Entry* r =
       g_ctx.resident_index >= 0
@@ -121,32 +140,43 @@ bool enqueue_purchase() {
   e.free_item = g_ctx.free_item;
   e.kind = transaction_queue::Kind::Purchase;
 
-  if (!transaction_queue::push(e)) return false;
+  if (!transaction_queue::push(e)) {
+    snprintf(g_ctx.message, sizeof(g_ctx.message), "Warteschlange voll");
+    return Enqueued::Refused;
+  }
   // Durable before the first attempt, not after it.
   transaction_queue::flush();
-  backend::send_queued_now();
-  return true;
+  // A request may not start now — the radio may be down, or a sync may hold the
+  // slot. The drink is stored either way, so report it as deferred rather than
+  // waiting on a result nobody is producing.
+  return backend::send_queued_now() ? Enqueued::Watching : Enqueued::Deferred;
 }
 
 // Undoing a purchase that never left the device just removes it. Nothing was
 // recorded, so there is nothing to reverse and no round trip to make.
-bool enqueue_undo() {
-  if (!backend::configured()) return false;
+Enqueued enqueue_undo() {
+  if (!backend::configured()) return Enqueued::NoBackend;
   if (transaction_queue::remove_purchase(g_ctx.transaction_id)) {
     transaction_queue::flush();
     Serial.printf("[undo] dropped queued transaction %s\n", g_ctx.transaction_id);
-    return false;  // resolves immediately through the simulated path
+    // Nothing ever reached the backend, so this really is finished.
+    return Enqueued::NoBackend;
   }
-  if (transaction_queue::full()) return false;
+  if (transaction_queue::full()) {
+    snprintf(g_ctx.message, sizeof(g_ctx.message), "Warteschlange voll");
+    return Enqueued::Refused;
+  }
 
   transaction_queue::Entry e = {};
   snprintf(e.transaction_id, sizeof(e.transaction_id), "%s", g_ctx.transaction_id);
   snprintf(e.product_name, sizeof(e.product_name), "%s", g_ctx.product_name);
   e.kind = transaction_queue::Kind::Void;
-  if (!transaction_queue::push(e)) return false;
+  if (!transaction_queue::push(e)) {
+    snprintf(g_ctx.message, sizeof(g_ctx.message), "Warteschlange voll");
+    return Enqueued::Refused;
+  }
   transaction_queue::flush();
-  backend::send_queued_now();
-  return true;
+  return backend::send_queued_now() ? Enqueued::Watching : Enqueued::Deferred;
 }
 
 void make_transaction_id() {
@@ -261,7 +291,12 @@ void dispatch(Event e) {
       break;
 
     case State::SelectingUser:
-      if (e == Event::ResidentSelected) { make_transaction_id(); enter(State::Submitting); }
+      if (e == Event::ResidentSelected) {
+        make_transaction_id();
+        g_ctx.message[0] = '\0';
+        backend::clear();
+        enter(State::Submitting);
+      }
       else if (e == Event::ArchiveRequested) {
         g_ctx.archive_storage_index = g_ctx.product_index;
         enter(State::ConfirmArchive);
