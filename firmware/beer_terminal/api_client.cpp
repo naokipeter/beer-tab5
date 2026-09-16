@@ -34,6 +34,8 @@ int g_http_code = 0;
 
 volatile Status g_status = Status::Idle;
 volatile Error g_error = Error::None;
+// Formatted messages need somewhere to live, since error_text returns a pointer.
+char g_error_detail[64] = {};
 
 void set_status(Status s) {
   // Release: the buffers are written before the status the main loop polls.
@@ -77,6 +79,8 @@ void perform() {
   if (code <= 0) {
     Serial.printf("[api] transport error %d (%s)\n", code,
                   HTTPClient::errorToString(code).c_str());
+    snprintf(g_error_detail, sizeof(g_error_detail), "%s",
+             HTTPClient::errorToString(code).c_str());
     g_error = Error::Transport;
     http.end();
     set_status(Status::Failed);
@@ -117,7 +121,11 @@ void perform() {
   http.end();
 
   if (code < 200 || code >= 300) {
-    Serial.printf("[api] http %d\n", code);
+    // Carry the status onto the screen. "Server meldet einen Fehler" alone sends
+    // someone looking for a serial cable; the number says which mistake it is.
+    Serial.printf("[api] http %d, %u bytes: %.120s\n", code,
+                  static_cast<unsigned>(written), g_response);
+    snprintf(g_error_detail, sizeof(g_error_detail), "HTTP %d vom Server", code);
     g_error = Error::HttpStatus;
     set_status(Status::Failed);
     return;
@@ -180,6 +188,7 @@ bool post(const char* body, size_t len) {
   g_request[len] = '\0';
   g_request_len = len;
   g_error = Error::None;
+  g_error_detail[0] = '\0';
   set_status(Status::Busy);
   xTaskNotifyGive(g_task);
   return true;
@@ -203,8 +212,10 @@ const char* error_text() {
     case Error::NotConfigured: return "Gerät nicht konfiguriert";
     case Error::Offline:       return "Kein WLAN";
     case Error::Busy:          return "Anfrage läuft bereits";
-    case Error::Transport:     return "Server nicht erreichbar";
-    case Error::HttpStatus:    return "Server meldet einen Fehler";
+    case Error::Transport:
+      return g_error_detail[0] ? g_error_detail : "Server nicht erreichbar";
+    case Error::HttpStatus:
+      return g_error_detail[0] ? g_error_detail : "Server meldet einen Fehler";
     case Error::TooLarge:      return "Antwort zu gross";
   }
   return "";
