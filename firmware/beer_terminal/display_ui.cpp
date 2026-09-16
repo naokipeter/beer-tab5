@@ -14,7 +14,12 @@ Target targets[4];
 int screen_width, screen_height;
 bool marker_visible = false;
 int marker_x, marker_y;
+uint32_t last_sample = 0;
 uint32_t last_refresh = 0;
+uint32_t sample_count = 0;
+uint32_t last_contact = 0;
+bool contact_active = false;
+bool reset_latched = false;
 
 bool inside(int x, int y, int left, int top, int width, int height) {
   return x >= left && x < left + width && y >= top && y < top + height;
@@ -75,48 +80,58 @@ void begin() {
 }
 
 void update() {
-  // M5Unified uses the display's coordinate conversion, including its rotation.
-  // Do not apply a second manual 180-degree touch transformation.
-  const auto count = M5.Touch.getCount();
-  bool pressed = false;
-  for (uint8_t i = 0; i < count; ++i) {
-    const auto touch = M5.Touch.getDetail(i);
-    if (!touch.isPressed()) continue;
-    pressed = true;
-    if (touch.wasPressed()) {
-      if (inside(touch.x, touch.y, (screen_width - target_width) / 2,
-                 screen_height - margin - target_height, target_width, target_height)) {
-        begin();
-        return;
-      }
-      for (auto& target : targets) {
-        if (!target.passed && inside(touch.x, touch.y, target.x, target.y,
-                                    target_width, target_height)) {
-          target.passed = true;
-          draw_target(target);
-          draw_progress();
-          Serial.printf("Touch target: %s (%d, %d)\n", target.label, touch.x, touch.y);
-        }
+  const uint32_t now = millis();
+  if (static_cast<uint32_t>(now - last_sample) < 16) return;
+  last_sample = now;
+  // One owner reads the controller. getTouch applies the display rotation.
+  // Unlike gesture events, these coordinates also follow slow movement/holds.
+  m5gfx::touch_point_t point;
+  const bool pressed = M5.Display.getTouch(&point, 1) != 0;
+  ++sample_count;
+  if (pressed) {
+    last_contact = now;
+    contact_active = true;
+    if (!reset_latched && inside(point.x, point.y, (screen_width - target_width) / 2,
+                                screen_height - margin - target_height,
+                                target_width, target_height)) {
+      reset_latched = true;
+      begin();
+      return;
+    }
+    // Targets are idempotent: accept any valid sample inside, not only a
+    // one-frame touch-begin event. Reset stays latched until finger release.
+    for (auto& target : targets) {
+      if (!target.passed && inside(point.x, point.y, target.x, target.y,
+                                  target_width, target_height)) {
+        target.passed = true;
+        draw_target(target);
+        draw_progress();
       }
     }
-    // Limit repaint frequency; events above are still processed every loop.
-    const uint32_t now = millis();
-    if (static_cast<uint32_t>(now - last_refresh) < 33) continue;
-    last_refresh = now;
+  } else if (contact_active && static_cast<uint32_t>(now - last_contact) >= 64) {
+    contact_active = false;
+    reset_latched = false;
     clear_marker();
-    M5.Display.fillRect(24, 250, screen_width - 48, 20, TFT_BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.setCursor(32, 250);
-    M5.Display.printf("Touch: x=%d y=%d", touch.x, touch.y);
-    M5.Display.setTextSize(3);
-    if (inside(touch.x, touch.y, 38, 284, screen_width - 76, screen_height - 468)) {
-      marker_x = touch.x;
-      marker_y = touch.y;
+  }
+  // Keep this counter updating even with no contact, to expose a stalled loop.
+  if (static_cast<uint32_t>(now - last_refresh) < 50) return;
+  last_refresh = now;
+  M5.Display.fillRect(24, 250, screen_width - 48, 20, TFT_BLACK);
+  M5.Display.setTextSize(2);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.setCursor(32, 250);
+  M5.Display.printf("Samples: %lu  Contact: %s", static_cast<unsigned long>(sample_count),
+                    pressed ? "yes" : "no");
+  if (pressed) M5.Display.printf("  x=%d y=%d", point.x, point.y);
+  M5.Display.setTextSize(3);
+  if (pressed) {
+    clear_marker();
+    if (inside(point.x, point.y, 38, 284, screen_width - 76, screen_height - 468)) {
+      marker_x = point.x;
+      marker_y = point.y;
       marker_visible = true;
       M5.Display.fillCircle(marker_x, marker_y, 10, TFT_CYAN);
     }
   }
-  if (!pressed) clear_marker();
 }
 }

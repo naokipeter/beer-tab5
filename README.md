@@ -67,12 +67,14 @@ upright. Tap the four blue corner buttons: only the touched corner should turn
 green and show OK. After all four, the status should read "All corners OK".
 Drag a finger inside the central outlined area: the cyan dot should follow it
 without mirroring or offset. Tap "Start again" to clear the results and repeat.
-Serial Monitor at 115200 baud reports dimensions, touch availability and each
-corner hit. Report orientation, corner response and dot alignment before the
+Serial Monitor at 115200 baud reports startup dimensions and touch availability.
+The on-screen sample counter should keep increasing. Drag for at least 10 seconds;
+if tracking stops, note whether Samples still increases, whether Contact says yes,
+and whether x/y change. Report orientation, corner response and dot alignment before the
 LVGL milestone; this is the requested hardware-observation gate.
 
 The rotation is centralized in `settings.h` (`display_rotation = 3`, previously 1).
-M5Unified automatically transforms touch coordinates with the display rotation.
+M5GFX automatically transforms touch coordinates with the display rotation.
 This test remains awake; it does not test sleep or wake from touch.
 
 ### Optional CLI upload
@@ -90,8 +92,7 @@ CHIP_VARIANT="$CHIP_VARIANT" ./tools/build.sh
 ./tools/arduino.sh monitor --port "$TAB5_PORT" --config baudrate=115200
 ```
 
-4. Verify the touch test described above, serial heartbeat every five seconds,
-   and PSRAM detection. If the initial
+4. Verify the touch test described above and PSRAM detection. If the initial
    serial message is missed while USB enumerates, reset with the monitor open.
 5. Report screen output, PSRAM, chip revision and any resets. Display and touch
    examples have separate build directories; compile success does not verify

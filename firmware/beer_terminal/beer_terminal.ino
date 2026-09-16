@@ -25,13 +25,7 @@ void setup() {
 }
 
 void loop() {
-  M5.update();
+  // display_ui owns touch sampling; M5.update() would read the same controller.
   display_ui::update();
-  const uint32_t now = millis();
-  static uint32_t last_report = 0;
-  if (static_cast<uint32_t>(now - last_report) >= 5000) {
-    last_report = now;
-    Serial.println("Milestone 2 heartbeat");
-  }
-  delay(5);  // Yield to system tasks; this is awake idle, not a sleep mode.
+  delay(1);  // Yield; no sleep mode and no periodic serial writes in the input loop.
 }
