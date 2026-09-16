@@ -39,6 +39,12 @@ size_t build_record_purchase(char* out, size_t capacity, const char* token,
 size_t build_void_purchase(char* out, size_t capacity, const char* token,
                            const char* device, const char* transaction_id);
 
+// True only for an https URL on one of Google's own hosts. A redirect target
+// arrives over the network and decides where the next request goes, so it is a
+// trust decision, not a formatting one — which is why it lives here, beside the
+// rest of the contract, and is tested on the host.
+bool redirect_target_allowed(const char* url);
+
 struct SyncResult {
   uint32_t revision;
   bool changed;

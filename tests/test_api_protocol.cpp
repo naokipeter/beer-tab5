@@ -148,6 +148,33 @@ int main() {
           "an over-long name is truncated to its field");
   }
 
+  std::printf("\nredirect targets\n");
+  {
+    using api_protocol::redirect_target_allowed;
+    check(redirect_target_allowed(
+              "https://script.googleusercontent.com/macros/echo?user_content_key=x"),
+          "the Apps Script echo host is allowed");
+    check(redirect_target_allowed("https://script.google.com/macros/s/AB/exec"),
+          "script.google.com is allowed");
+    check(!redirect_target_allowed("http://script.google.com/x"),
+          "plain http is refused");
+    check(!redirect_target_allowed("https://evil.example.com/x"),
+          "another host is refused");
+    check(!redirect_target_allowed("https://google.com.evil.example/x"),
+          "a suffix lookalike is refused");
+    check(!redirect_target_allowed("https://notgoogle.com/x"),
+          "a host merely ending in the wrong place is refused");
+    check(!redirect_target_allowed("https://evil.example/?x=.google.com"),
+          "the suffix appearing in the path or query does not count");
+    check(!redirect_target_allowed("https://script.google.com@evil.example/x"),
+          "userinfo before an at-sign cannot smuggle a host past the check");
+    check(!redirect_target_allowed(""), "an empty location is refused");
+    check(!redirect_target_allowed("https://"), "a bare scheme is refused");
+    // The bare apex is intentionally refused: every host we talk to is a
+    // subdomain, and allowing it would widen the surface for nothing.
+    check(!redirect_target_allowed("https://google.com/x"), "the bare apex is refused");
+  }
+
   std::printf("\nacknowledgements\n");
   {
     bool dup = true;

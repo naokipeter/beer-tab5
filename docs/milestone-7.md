@@ -63,8 +63,23 @@ alternative and was rejected: certificate rotation would brick the fridge.
 URL fails the build rather than sending the device token in clear.
 
 Apps Script answers a POST with a 302 to `script.googleusercontent.com`. The
-token therefore lives in the **request body**, which a 302 does not resend, and
-not in a header, which `HTTPClient` would resend to the redirect target.
+token therefore lives in the **request body**, which the redirect drops, and not
+in a header, which would be resent to the redirect target.
+
+The redirect is followed by hand, one hop per call with a fresh `HTTPClient`.
+`HTTPClient`'s own redirect following cannot be used here: it clears its header
+list only when the new location is a bare path, and Apps Script's is an absolute
+URL on another host, so the POST's `Content-Type` and `Content-Length` survive
+onto the follow-up GET. Google answers a GET that advertises a body it never
+receives with **400**, which presents as a backend fault with `doPost` visibly
+succeeding in the Apps Script execution log.
+
+Each target is checked before it is followed: https only, and only a subdomain of
+`google.com` or `googleusercontent.com`. A redirect arrives over the network and
+decides where the next request goes, so it is a trust decision. The check lives
+in `api_protocol` and is host-tested, including userinfo smuggling
+(`https://script.google.com@evil.example/`) and suffix lookalikes
+(`https://google.com.evil.example/`).
 
 Server-supplied strings are bounded to their fields and stripped of control
 characters before they reach a label or the serial log.

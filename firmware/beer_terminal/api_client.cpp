@@ -25,6 +25,12 @@ constexpr UBaseType_t kTaskPriority = 3;
 // the UI for the same core.
 constexpr BaseType_t kTaskCore = 0;
 
+// Apps Script answers a POST with a 302 to script.googleusercontent.com and
+// serves the body from there, so at least one hop is always needed.
+constexpr int kMaxRedirects = 3;
+// Those echo URLs carry a long one-time key.
+constexpr size_t kMaxUrlBytes = 768;
+
 TaskHandle_t g_task = nullptr;
 char g_request[api_protocol::kMaxRequestBytes];
 size_t g_request_len = 0;
@@ -43,11 +49,9 @@ void set_status(Status s) {
                    static_cast<uint8_t>(s), __ATOMIC_RELEASE);
 }
 
-void perform() {
-  g_response_len = 0;
-  g_http_code = 0;
-  if (g_response) g_response[0] = '\0';
-
+// One hop. Returns the HTTP status, or a negative HTTPClient error. On a
+// redirect the target is copied into `location`.
+int one_request(const char* url, bool post, char* location, size_t location_cap) {
   NetworkClientSecure client;
   client.setCACertBundle(kCaBundleStart,
                          static_cast<size_t>(kCaBundleEnd - kCaBundleStart));
@@ -56,75 +60,113 @@ void perform() {
   HTTPClient http;
   http.setConnectTimeout(config::connect_timeout_ms);
   http.setTimeout(config::request_timeout_ms);
-  // Apps Script answers a POST with a 302 to script.googleusercontent.com and
-  // serves the body from there. The redirect target carries its own one-time
-  // token in the URL; our device token stays in the request body, which a 302
-  // does not resend, so it is never handed to the second host. A token in a
-  // header would be resent.
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  // Redirects are followed by hand, one hop per call with a fresh HTTPClient.
+  // Letting the library do it sends the POST's Content-Length and Content-Type
+  // along on the follow-up GET — it only clears its header list when the new
+  // location is a bare path, and Apps Script's is an absolute URL on another
+  // host. Google answers that GET-with-a-body-length with 400.
+  http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
   http.setReuse(false);
 
-  if (!http.begin(client, config::api_endpoint)) {
-    g_error = Error::Transport;
-    set_status(Status::Failed);
-    return;
+  if (!http.begin(client, url)) return HTTPC_ERROR_CONNECTION_REFUSED;
+
+  int code;
+  if (post) {
+    http.addHeader("Content-Type", "application/json");
+    code = http.POST(reinterpret_cast<uint8_t*>(g_request), g_request_len);
+  } else {
+    code = http.GET();
   }
-  http.addHeader("Content-Type", "application/json");
 
-  // HTTPClient::POST takes a non-const pointer but does not modify the body.
-  const int code =
-      http.POST(reinterpret_cast<uint8_t*>(g_request), g_request_len);
-  g_http_code = code;
-
-  if (code <= 0) {
-    Serial.printf("[api] transport error %d (%s)\n", code,
-                  HTTPClient::errorToString(code).c_str());
-    snprintf(g_error_detail, sizeof(g_error_detail), "%s",
-             HTTPClient::errorToString(code).c_str());
-    g_error = Error::Transport;
+  location[0] = '\0';
+  if (code == HTTP_CODE_MOVED_PERMANENTLY || code == HTTP_CODE_FOUND ||
+      code == HTTP_CODE_SEE_OTHER || code == HTTP_CODE_TEMPORARY_REDIRECT ||
+      code == HTTP_CODE_PERMANENT_REDIRECT) {
+    snprintf(location, location_cap, "%s", http.getLocation().c_str());
     http.end();
-    set_status(Status::Failed);
-    return;
+    return code;
   }
 
-  const int size = http.getSize();
-  if (size > static_cast<int>(api_protocol::kMaxResponseBytes - 1)) {
-    Serial.printf("[api] response too large: %d bytes\n", size);
-    g_error = Error::TooLarge;
-    http.end();
-    set_status(Status::Failed);
-    return;
-  }
-
-  // Read bounded regardless of the advertised length, since a chunked response
-  // reports -1.
-  NetworkClient* stream = http.getStreamPtr();
-  size_t written = 0;
-  const uint32_t deadline = millis() + config::request_timeout_ms;
-  while (http.connected() && written < api_protocol::kMaxResponseBytes - 1) {
-    const size_t avail = stream->available();
-    if (avail == 0) {
-      if (static_cast<int32_t>(millis() - deadline) >= 0) break;
-      if (size >= 0 && written >= static_cast<size_t>(size)) break;
-      delay(5);
-      continue;
+  if (code > 0) {
+    const int advertised = http.getSize();
+    NetworkClient* stream = http.getStreamPtr();
+    size_t written = 0;
+    const uint32_t deadline = millis() + config::request_timeout_ms;
+    // Bounded regardless of the advertised length, since a chunked response
+    // reports -1.
+    while (http.connected() && written < api_protocol::kMaxResponseBytes - 1) {
+      const size_t avail = stream->available();
+      if (avail == 0) {
+        if (static_cast<int32_t>(millis() - deadline) >= 0) break;
+        if (advertised >= 0 && written >= static_cast<size_t>(advertised)) break;
+        delay(5);
+        continue;
+      }
+      const size_t room = api_protocol::kMaxResponseBytes - 1 - written;
+      const size_t want = avail < room ? avail : room;
+      const int got = stream->readBytes(g_response + written, want);
+      if (got <= 0) break;
+      written += static_cast<size_t>(got);
+      if (advertised >= 0 && written >= static_cast<size_t>(advertised)) break;
     }
-    const size_t room = api_protocol::kMaxResponseBytes - 1 - written;
-    const size_t want = avail < room ? avail : room;
-    const int got = stream->readBytes(g_response + written, want);
-    if (got <= 0) break;
-    written += static_cast<size_t>(got);
-    if (size >= 0 && written >= static_cast<size_t>(size)) break;
+    g_response[written] = '\0';
+    g_response_len = written;
   }
-  g_response[written] = '\0';
-  g_response_len = written;
+
   http.end();
+  return code;
+}
+
+void perform() {
+  g_response_len = 0;
+  g_http_code = 0;
+  if (g_response) g_response[0] = '\0';
+
+  char url[kMaxUrlBytes];
+  char location[kMaxUrlBytes];
+  snprintf(url, sizeof(url), "%s", config::api_endpoint);
+
+  bool post = true;
+  int code = 0;
+  for (int hop = 0; hop <= kMaxRedirects; ++hop) {
+    code = one_request(url, post, location, sizeof(location));
+    g_http_code = code;
+
+    if (code <= 0) {
+      Serial.printf("[api] transport error %d (%s)\n", code,
+                    HTTPClient::errorToString(code).c_str());
+      snprintf(g_error_detail, sizeof(g_error_detail), "%s",
+               HTTPClient::errorToString(code).c_str());
+      g_error = Error::Transport;
+      set_status(Status::Failed);
+      return;
+    }
+
+    if (location[0] == '\0') break;  // not a redirect; this is the answer
+
+    if (hop == kMaxRedirects) {
+      Serial.println("[api] too many redirects");
+      snprintf(g_error_detail, sizeof(g_error_detail), "Zu viele Weiterleitungen");
+      g_error = Error::HttpStatus;
+      set_status(Status::Failed);
+      return;
+    }
+    if (!api_protocol::redirect_target_allowed(location)) {
+      Serial.printf("[api] refusing redirect to %.80s\n", location);
+      snprintf(g_error_detail, sizeof(g_error_detail), "Weiterleitung abgelehnt");
+      g_error = Error::HttpStatus;
+      set_status(Status::Failed);
+      return;
+    }
+    // The body is deliberately not resent: the redirect drops to GET, so the
+    // device token never reaches the second host.
+    snprintf(url, sizeof(url), "%s", location);
+    post = false;
+  }
 
   if (code < 200 || code >= 300) {
-    // Carry the status onto the screen. "Server meldet einen Fehler" alone sends
-    // someone looking for a serial cable; the number says which mistake it is.
     Serial.printf("[api] http %d, %u bytes: %.120s\n", code,
-                  static_cast<unsigned>(written), g_response);
+                  static_cast<unsigned>(g_response_len), g_response);
     snprintf(g_error_detail, sizeof(g_error_detail), "HTTP %d vom Server", code);
     g_error = Error::HttpStatus;
     set_status(Status::Failed);

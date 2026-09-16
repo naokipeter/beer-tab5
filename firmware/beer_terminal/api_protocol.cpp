@@ -38,6 +38,27 @@ size_t serialise(const JsonDocument& doc, char* out, size_t capacity) {
 
 }  // namespace
 
+bool redirect_target_allowed(const char* url) {
+  if (!url || strncmp(url, "https://", 8) != 0) return false;
+  const char* host = url + 8;
+  const char* slash = strchr(host, '/');
+  size_t host_len = slash ? static_cast<size_t>(slash - host) : strlen(host);
+  // Userinfo before an '@' would let "google.com@evil.example" pass a naive
+  // suffix test, so refuse it outright rather than try to parse it.
+  if (memchr(host, '@', host_len) != nullptr) return false;
+  // Strip an explicit port before matching the suffix.
+  const void* colon = memchr(host, ':', host_len);
+  if (colon) host_len = static_cast<size_t>(static_cast<const char*>(colon) - host);
+  if (host_len == 0 || host_len > 253) return false;
+
+  static const char* const kSuffixes[] = {".google.com", ".googleusercontent.com"};
+  for (const char* suffix : kSuffixes) {
+    const size_t n = strlen(suffix);
+    if (host_len > n && strncmp(host + host_len - n, suffix, n) == 0) return true;
+  }
+  return false;
+}
+
 size_t build_sync(char* out, size_t capacity, const char* token, const char* device,
                   uint32_t since_revision) {
   JsonDocument doc;
