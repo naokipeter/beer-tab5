@@ -1,13 +1,16 @@
 #include "ui_screens.h"
+#include <Arduino.h>
 #include "ui_lvgl.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "backend.h"
 #include "catalog_layout.h"
 #include "device_storage.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
+#include "wifi_manager.h"
 #include "settings.h"
 #include "ui_fonts.h"
 #include "ui_keyboard.h"
@@ -743,6 +746,27 @@ void build_admin() {
                                                        : settings::theme::danger,
                              &font_de_20);
   lv_obj_set_pos(stl, settings::grid_margin, y + 70);
+
+  char net[160];
+  if (!backend::configured()) {
+    snprintf(net, sizeof(net),
+             "Kein Server konfiguriert - Buchungen bleiben lokal (secrets.h)");
+  } else if (wifi_manager::online()) {
+    const uint32_t last = backend::last_sync_ms();
+    snprintf(net, sizeof(net), "WLAN %s (%ld dBm), Sync vor %lu s%s",
+             wifi_manager::status_text(), static_cast<long>(wifi_manager::rssi()),
+             last == 0 ? 0UL : static_cast<unsigned long>((millis() - last) / 1000),
+             backend::sync_in_flight() ? ", laeuft" : "");
+  } else {
+    snprintf(net, sizeof(net), "WLAN %s%s", wifi_manager::status_text(),
+             backend::sync_in_flight() ? ", Sync wartet" : "");
+  }
+  lv_obj_t* nl2 = make_label(scr, net,
+                             backend::configured() && wifi_manager::online()
+                                 ? settings::theme::text_muted
+                                 : settings::theme::accent,
+                             &font_de_20);
+  lv_obj_set_pos(nl2, settings::grid_margin, y + 100);
 
   lv_obj_t* sw_label = make_label(scr, "Nächsten Fehler simulieren",
                                   settings::theme::text_muted, &font_de_20);

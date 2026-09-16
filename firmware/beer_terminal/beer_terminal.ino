@@ -1,17 +1,22 @@
 // M5Stack Tab5 beer terminal.
-// Milestone 3: LVGL screens and the explicit state machine, driven by a mock
-// catalog. No camera, networking, backend or sleep implementation yet.
+// Milestone 7: LVGL screens, the explicit state machine, a persisted catalog and
+// an HTTPS client that talks to the Apps Script backend over the ESP32-C6.
+// Without secrets.h the device still runs: purchases are simulated locally.
+// No camera and no sleep implementation yet.
 // Resident names come from resident_directory, which the backend replaces in
 // milestone 7; they are never hard-coded into a screen.
 #include <M5Unified.h>
 
+#include "api_client.h"
 #include "app_state.h"
+#include "backend.h"
 #include "device_storage.h"
 #include "display_ui.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
 #include "settings.h"
+#include "wifi_manager.h"
 #include "ui_screens.h"
 
 namespace {
@@ -39,6 +44,12 @@ void setup() {
     return;
   }
 
+  // Networking comes up after the UI, so a slow association never delays the
+  // first frame. The device is fully usable before the radio associates.
+  wifi_manager::begin();
+  api_client::begin();
+  backend::begin();
+
   // Registered after the display exists, so the first transition can draw.
   app_state::begin(on_state_change);
   Serial.printf("[boot] device=%s active=%u archived=%u residents=%u (%s)\n",
@@ -50,8 +61,11 @@ void setup() {
 }
 
 void loop() {
+  const uint32_t now = millis();
   M5.update();
-  app_state::update(millis());
+  wifi_manager::update(now);
+  backend::update(now);
+  app_state::update(now);
   display_ui::update();
   // Persist off the UI event path, so a flash write never delays a touch.
   product_catalog::flush();

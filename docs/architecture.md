@@ -36,7 +36,11 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 | `resident_directory` | Resident list from the backend, compiled-in fallback, 3/7 |
 | `purchase_log` | Consumption tally behind the summary screen, 3/8 |
 | `product_lookup` | Own DB first; optional OFF fallback for manual EAN entry, 7 |
-| `wifi_manager` | C6 connection lifecycle and reconnect scheduling, 7 |
+| `wifi_manager` | C6 connection lifecycle, backoff, radio off when idle, 7 |
+| `api_protocol` | Wire contract; no I/O, host-tested, 7 |
+| `api_client` | One HTTPS request at a time on its own task, 7 |
+| `backend` | Bridges the state machine and the network; applies syncs, 7 |
+| `config.h` | Resolves secrets.h with empty fallbacks so builds never need it |
 | `purchase_logger` | HTTPS submissions and response validation, 7 |
 | `transaction_queue` | Durable pending record before sending, retries with same ID, 9 |
 | `power_manager` | Verified rail shutdown and sleep/wake policy, 10 |
@@ -149,8 +153,14 @@ and the screen says to archive something first.
 - Purchases: `transaction_id,timestamp,barcode,product_name,price_rappen,resident_id,resident_name,device_id`
 - Residents: `resident_id,name,active`
 
-Actions: `catalog`, `lookupProduct`, `createProduct`, `changePrice`,
+Actions: `sync`, `lookupProduct`, `createProduct`, `changePrice`,
 `archiveProduct`, `restoreProduct`, `recordPurchase`, `voidPurchase`.
+
+`sync` replaces the separate catalog and residents calls: it takes the device's
+known revision and returns `revision`, `changed`, `products[]` and `residents[]`
+in one round trip, because on a battery device the association costs more than
+the payload. The exact request and response shapes are fixed in
+[milestone 7](milestone-7.md) and implemented by `api_protocol`.
 
 `voidPurchase` takes the original `transaction_id` and marks that row reversed
 rather than deleting it, so the sheet keeps an auditable trail of what happened.

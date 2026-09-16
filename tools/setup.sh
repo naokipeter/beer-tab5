@@ -14,3 +14,4 @@ fi
 "$CLI" lib install 'M5GFX@0.2.29' --no-deps
 "$CLI" lib install 'M5Unified@0.2.22' --no-deps
 "$CLI" lib install 'lvgl@9.2.2' --no-deps
+"$CLI" lib install 'ArduinoJson@7.4.3' --no-deps

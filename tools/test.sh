@@ -9,6 +9,8 @@ trap 'rm -rf "$OUT"' EXIT
 CXX="${CXX:-c++}"
 FLAGS=(-std=c++17 -Wall -Wextra -Werror)
 FW="$ROOT/firmware/beer_terminal"
+# ArduinoJson is header-only, so the wire protocol compiles on the host too.
+AJ="$ROOT/.arduino/user/libraries/ArduinoJson/src"
 
 # Some macOS Command Line Tools installs keep a stale usr/include/c++/v1 that
 # shadows the SDK's libc++, so <cstdio> cannot be found. Detect once.
@@ -31,5 +33,6 @@ run() { # name, sources...
 
 run test_catalog_layout "$ROOT/tests/test_catalog_layout.cpp" "$FW/catalog_layout.cpp"
 run test_catalog_codec  "$ROOT/tests/test_catalog_codec.cpp"  "$FW/catalog_codec.cpp"
+run test_api_protocol   "$ROOT/tests/test_api_protocol.cpp"   "$FW/api_protocol.cpp" -I"$AJ"
 
 echo "host tests passed"

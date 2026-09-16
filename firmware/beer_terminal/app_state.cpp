@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <Arduino.h>
+#include "backend.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -19,6 +20,10 @@ uint32_t g_deadline = 0;
 uint32_t g_dwell_total = 0;
 // Set when a submission is deliberately failed, so Retry can succeed instead.
 bool g_fail_next_submit = false;
+// True when the current SUBMITTING or UNDOING is the simulated one, because no
+// backend is configured or the request could not be started. Keeps a device
+// without secrets.h fully demonstrable.
+bool g_simulated = false;
 
 void enter(State next) {
   if (next == g_state) return;
@@ -28,11 +33,20 @@ void enter(State next) {
   g_dwell_total = 0;
 
   switch (next) {
-    case State::Submitting:
-      g_dwell_total = settings::mock_submit_ms;
+    case State::Submitting: {
+      const resident_directory::Entry* r =
+          g_ctx.resident_index >= 0
+              ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+              : nullptr;
+      g_simulated = !backend::submit_purchase(
+          g_ctx.transaction_id, g_ctx.barcode, g_ctx.product_name, g_ctx.price_rappen,
+          g_ctx.free_item, r ? r->id : "");
+      g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
       break;
+    }
     case State::Undoing:
-      g_dwell_total = settings::mock_submit_ms;
+      g_simulated = !backend::void_purchase(g_ctx.transaction_id);
+      g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
       break;
     case State::Success:
       // An acknowledged reversal needs no decision, so it clears faster than the
@@ -62,6 +76,25 @@ void reset_context() {
   g_ctx.archive_storage_index = -1;
   g_ctx.undone = false;
   g_ctx.undo_in_flight = false;
+}
+
+// The local tally mirrors what the backend holds, so the summary works offline.
+void record_locally() {
+  const resident_directory::Entry* r =
+      g_ctx.resident_index >= 0
+          ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+          : nullptr;
+  if (r) purchase_log::record(r->id, r->name, g_ctx.price_rappen, g_ctx.free_item);
+}
+
+void reverse_locally() {
+  const resident_directory::Entry* r =
+      g_ctx.resident_index >= 0
+          ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+          : nullptr;
+  if (r) purchase_log::unrecord(r->id, g_ctx.price_rappen, g_ctx.free_item);
+  g_ctx.undo_in_flight = false;
+  g_ctx.undone = true;
 }
 
 void make_transaction_id() {
@@ -238,6 +271,27 @@ void dispatch(Event e) {
 }
 
 void update(uint32_t now_ms) {
+  // A real request finishes when the backend says so, not on a timer.
+  if (!g_simulated && (g_state == State::Submitting || g_state == State::Undoing)) {
+    const backend::Result r = backend::result();
+    if (r == backend::Result::Pending) return;
+    if (r == backend::Result::Success) {
+      if (g_state == State::Submitting) {
+        record_locally();
+        dispatch(Event::SubmitSucceeded);
+      } else {
+        reverse_locally();
+        dispatch(Event::UndoSucceeded);
+      }
+    } else {
+      snprintf(g_ctx.message, sizeof(g_ctx.message), "%s",
+               backend::error()[0] ? backend::error() : "Server nicht erreichbar");
+      dispatch(g_state == State::Submitting ? Event::SubmitFailed : Event::UndoFailed);
+    }
+    backend::clear();
+    return;
+  }
+
   if (g_deadline == 0 || static_cast<int32_t>(now_ms - g_deadline) < 0) return;
   g_deadline = 0;
 
@@ -248,33 +302,15 @@ void update(uint32_t now_ms) {
         snprintf(g_ctx.message, sizeof(g_ctx.message), "Keine Verbindung zum Server");
         dispatch(Event::SubmitFailed);
       } else {
-        const resident_directory::Entry* r =
-            g_ctx.resident_index >= 0
-                ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
-                : nullptr;
-        if (r) {
-          purchase_log::record(r->id, r->name, g_ctx.price_rappen, g_ctx.free_item);
-        }
+        record_locally();
         dispatch(Event::SubmitSucceeded);
       }
       break;
-    case State::Undoing: {
-      // From milestone 8 this is a void of transaction_id on the backend, which
-      // is why the ID is kept rather than regenerated: the server matches the
-      // reversal to the original row.
-      const resident_directory::Entry* r =
-          g_ctx.resident_index >= 0
-              ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
-              : nullptr;
-      if (r) {
-        purchase_log::unrecord(r->id, g_ctx.price_rappen, g_ctx.free_item);
-      }
-      Serial.printf("[undo] transaction=%s\n", g_ctx.transaction_id);
-      g_ctx.undo_in_flight = false;
-      g_ctx.undone = true;
+    case State::Undoing:
+      Serial.printf("[undo] simulated, transaction=%s\n", g_ctx.transaction_id);
+      reverse_locally();
       dispatch(Event::UndoSucceeded);
       break;
-    }
     case State::Success:
     case State::Summary:
       dispatch(Event::Dwell);

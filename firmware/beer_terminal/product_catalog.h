@@ -58,6 +58,13 @@ bool can_restore();
 // full or the name is unusable.
 int8_t add_product(const char* name, int32_t price_rappen, bool free_item);
 
+// Replaces the catalog with a synced list and records its revision. Products
+// the device created locally and has never sent anywhere — those with no
+// barcode — are carried over, so a sync cannot silently delete a beer somebody
+// added at the fridge while it was offline. Milestone 9's queue makes this
+// unnecessary by pushing them up instead.
+bool replace_all(const Product* items, uint8_t count, uint32_t revision);
+
 int8_t find(const char* barcode);
 
 // Formats an integer rappen amount as "CHF 2.40", or "Gratis" when free.

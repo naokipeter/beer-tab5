@@ -61,7 +61,11 @@ inline constexpr uint32_t ok = 0x63991F;
 inline constexpr uint32_t danger = 0xC0392B;
 }  // namespace theme
 
-// Simulated backend latency for the milestone 3 prototype, in milliseconds.
+// How often the catalog is refreshed while the device is awake. Milestone 10
+// replaces this timer with a sync on wake.
+inline constexpr uint32_t sync_interval_ms = 10UL * 60UL * 1000UL;
+
+// Simulated backend latency used when no backend is configured, in milliseconds.
 inline constexpr uint32_t mock_submit_ms = 800;
 // How long SUCCESS stays on screen before returning to the catalog. This is the
 // whole undo window, so it has to be long enough to notice a mis-tap and react.

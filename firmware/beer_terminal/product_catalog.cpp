@@ -178,6 +178,35 @@ int8_t add_product(const char* name, int32_t price_rappen, bool free_item) {
   return static_cast<int8_t>(g_count - 1);
 }
 
+bool replace_all(const Product* items, uint8_t count, uint32_t revision) {
+  if (!items || count > settings::max_products) return false;
+
+  // Keep the locally created ones aside before the list is overwritten.
+  Product local[settings::max_products];
+  uint8_t local_count = 0;
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (g_items[i].barcode[0] == '\0' && local_count < settings::max_products) {
+      local[local_count++] = g_items[i];
+    }
+  }
+
+  g_count = 0;
+  for (uint8_t i = 0; i < count; ++i) g_items[g_count++] = items[i];
+
+  for (uint8_t i = 0; i < local_count && g_count < settings::max_products; ++i) {
+    // A local product the backend now knows by name is no longer local.
+    bool superseded = false;
+    for (uint8_t j = 0; j < count && !superseded; ++j) {
+      superseded = strcmp(items[j].name, local[i].name) == 0;
+    }
+    if (!superseded) g_items[g_count++] = local[i];
+  }
+
+  g_revision = revision;
+  g_dirty = true;
+  return true;
+}
+
 int8_t find(const char* barcode) {
   if (!barcode || barcode[0] == '\0') return -1;
   for (uint8_t i = 0; i < g_count; ++i) {

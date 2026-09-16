@@ -10,8 +10,9 @@ if ! "$ROOT/tools/arduino.sh" lib list | awk '
   $1 == "M5GFX" && $2 == "0.2.29" { gfx=1 }
   $1 == "M5Unified" && $2 == "0.2.22" { unified=1 }
   $1 == "lvgl" && $2 == "9.2.2" { lv=1 }
-  END { exit !(gfx && unified && lv) }'; then
-  echo 'Required libraries: M5GFX@0.2.29, M5Unified@0.2.22 and lvgl@9.2.2. Run tools/setup.sh.' >&2
+  $1 == "ArduinoJson" && $2 == "7.4.3" { aj=1 }
+  END { exit !(gfx && unified && lv && aj) }'; then
+  echo 'Required libraries: M5GFX@0.2.29, M5Unified@0.2.22, lvgl@9.2.2 and ArduinoJson@7.4.3. Run tools/setup.sh.' >&2
   exit 1
 fi
 CHIP_VARIANT="${CHIP_VARIANT:-prev3}"

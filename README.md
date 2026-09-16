@@ -1,5 +1,8 @@
 # Tab5 beer terminal
 
+Milestone 7: the device syncs its catalog over HTTPS and records purchases
+against the backend, with the radio powered down when idle. The Apps Script that
+answers those requests is milestone 8, so nothing is verified end to end yet.
 Milestone 6: the catalog and resident list persist across reboots on LittleFS.
 Milestone 3 built the LVGL interface and the explicit state machine. Milestones 1
 to 3 are confirmed working on the device. There is no camera, networking, backend
@@ -18,7 +21,7 @@ catalog-first: residents tap a product tile rather than scanning. See
 ### Arduino IDE
 
 Open `firmware/beer_terminal/beer_terminal.ino`. Install M5Stack board package
-3.3.9, M5Unified 0.2.22, M5GFX 0.2.29 and lvgl 9.2.2 using the IDE's
+3.3.9, M5Unified 0.2.22, M5GFX 0.2.29, lvgl 9.2.2 and ArduinoJson 7.4.3 using the IDE's
 Boards/Library Managers. LVGL reads the sketch-local `lv_conf.h`; the
 `build_opt.h` beside the sketch supplies `-DLV_CONF_INCLUDE_SIMPLE` for that.
 
@@ -39,7 +42,8 @@ no custom language flags are needed in Arduino IDE.
 ### Arduino CLI
 
 Tested on Apple Silicon macOS with Arduino CLI **1.1.1**, official
-**m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**, **lvgl@9.2.2**.
+**m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**, **lvgl@9.2.2**,
+**ArduinoJson@7.4.3**.
 Application and library compilation explicitly uses GNU C++17. Core prebuilt
 ESP-IDF libraries retain their upstream compilation settings.
 
@@ -155,6 +159,11 @@ The firmware stays awake: battery current and wake latency have not been measure
 - `docs/`: hardware/API findings, proposed architecture, compilation evidence.
 - `backend/README.md`: reserved backend scope for milestone 8.
 - `.gitignore`: excludes credentials, dependencies and build products.
+
+To configure a real device, copy `firmware/beer_terminal/secrets.example.h` to
+`secrets.h` and fill in the Wi-Fi credentials, the Apps Script URL and the device
+token. Without it the firmware still builds and runs; purchases are simulated
+locally and the admin screen says so.
 
 Never commit `secrets.h` or `wifi_secrets.h`. No credentials are needed to build
 milestone 1. Future endpoint/token configuration belongs in the ignored secrets
