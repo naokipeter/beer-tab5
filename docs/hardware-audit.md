@@ -26,7 +26,7 @@ LVGL is deferred to milestone 3; propose 9.2.2, matching the official demo's
 | Wireless | `<WiFi.h>`, `WiFi.begin`, `WiFi.status`, `WiFi.disconnect`, `WiFi.mode(WIFI_OFF)`; `WiFi.setPins` available | Board variant already provides ESP-Hosted SDIO pins for C6. Driver stop is not proof the C6 power rail is off. |
 | Battery | `M5.Power.getBatteryVoltage()`, `getBatteryLevel()`, `isCharging()`, INA226 initialization | Measurements and charge behaviour require the physical battery. |
 | Power | `M5.Display.sleep()/wakeup()`, `M5.Power.lightSleep(us, touch_wakeup)`, `deepSleep(us, touch_wakeup)`, `timerSleep`, `powerOff`, `setExtOutput`, `setUsbOutput` | APIs exist but their board-specific implementation matters; no sleep mode selected yet. |
-| Camera | Official UserDemo `hal_camera.cpp`: `esp_video_init`, `ESP_VIDEO_MIPI_CSI_DEVICE_NAME`, V4L2 `open/ioctl/mmap`, `VIDIOC_DQBUF` / `VIDIOC_QBUF` | Camera is MIPI CSI/ISP, not the generic ESP32 parallel-camera interface. Arduino camera support is unverified and currently blocked. |
+| Camera | Official UserDemo `hal_camera.cpp`: `esp_video_init`, `ESP_VIDEO_MIPI_CSI_DEVICE_NAME`, V4L2 `open/ioctl/mmap`, `VIDIOC_DQBUF` / `VIDIOC_QBUF` | Camera is MIPI CSI/ISP, not the generic ESP32 parallel-camera interface. **Confirmed unavailable under Arduino** — see the camera gate section below. |
 
 [Official Arduino setup](https://docs.m5stack.com/en/arduino/m5tab5/program),
 [touch](https://docs.m5stack.com/en/arduino/m5tab5/touch),
@@ -36,45 +36,68 @@ LVGL is deferred to milestone 3; propose 9.2.2, matching the official demo's
 Local inspected sources: pinned libraries' `src/utility/Power_Class.cpp/.hpp`,
 M5GFX `src/M5GFX.cpp`, and core board/variant files.
 
-## Camera gate: not passed
+## Camera gate: not passed — verified by compilation, 2026-09-16
 
-No official Tab5 Arduino camera sketch was found locally or in the official Tab5
-Arduino documentation inspected. The generic CameraWebServer sketch is not a Tab5
-SC2356 example. The installed P4 and P4_ES SDK libraries do not contain
-`esp_video_init.h`, `esp_cam_sensor` or the SC2356 driver. Merely including an
-ESP-IDF header will not supply missing compiled components or Kconfig settings.
+Re-verified against the pinned toolchain (`m5stack:esp32@3.3.9`, Arduino CLI 1.1.1,
+both `esp32p4-libs` and `esp32p4_es-libs` SDK variants) with throwaway probe sketches
+built through `tools/build.sh`.
 
-The correct official reference is
-[M5Stack/M5Tab5-UserDemo](https://github.com/m5stack/M5Tab5-UserDemo), inspected at
-commit `b4e356bc491ca070d54004718dad789c07d5fc93` (temporary read-only reference checkout
-at `/private/tmp/tab5-official-userdemo`). Its documented embedded build uses
-**ESP-IDF 5.4.2**, not Arduino CLI. It includes camera components under
-`platforms/tab5/components/`, including `esp_video`, `esp_cam_sensor`, `esp_ipa`
-and `esp_sccb_intf`, plus board initialization. Its camera HAL uses the BSP's
-existing I2C handle, two mapped buffers and RGB565 output. A GREY format enum exists,
-but that does not establish SC2356 grayscale output works on this configuration.
-Sensor output/ISP format negotiation must be tested.
+| Probe | Includes / calls | Result |
+|---|---|---|
+| A | `esp_video_init.h`, `esp_cam_sensor.h` | `fatal error: esp_video_init.h: No such file or directory` |
+| B | `esp_cam_ctlr_csi.h`, `driver/isp.h`; `esp_cam_new_csi_ctlr()`, `esp_isp_new_processor()` | **Compiles and links** (479574 B flash, 27292 B RAM) |
+| C | `usb/usb_host.h`; `usb_host_install()`, `usb_host_client_register()` | **Compiles and links** (511144 B flash) |
 
-There is also a naming mismatch to resolve: the product documentation says
-SC2356, while this reference checkout contains `sensors/sc2336` and
-`CAMERA_SC2336` configuration. Do not infer electrical or register compatibility
-from those names. Confirm the detected sensor ID and the matching official
-driver/revision before attempting the camera milestone.
+The precise situation: the P4 **peripheral** drivers ship with the core
+(`esp_driver_cam` with CSI/DVP, `esp_driver_isp`, `esp_driver_jpeg`, `esp_driver_ppa`;
+`libesp_driver_cam.a`, `libesp_driver_isp.a` present). The **sensor stack does not**:
+`esp_video`, `esp_cam_sensor`, `esp_sccb_intf` and `esp_ipa` are absent from
+`include/` and `lib/` in both SDK variants, and the SDK's frozen `sdkconfig`
+contains no `ESP_VIDEO`, `CAM_SENSOR` or `CAMERA_SC*` keys at all. So the MIPI
+receiver can be allocated, but nothing knows how to bring up, address or configure
+the SC2356/SC2336 over SCCB, and no ISP tuning parameters exist for it.
 
-To reproduce that official reference separately, install ESP-IDF 5.4.2, clone the
-repository at the commit above, run `python ./fetch_repos.py`, then follow its
-`platforms/tab5` build instructions (`idf.py build`). This is an investigation
-option, **not an application framework migration performed in milestone 1**.
-Before milestone 4, assess whether these official components can be built into
-the Arduino distribution with matching IDF configuration. If not, explain the
-tradeoff and propose Arduino-as-IDF-component or native ESP-IDF for approval.
-Camera compilation cannot honestly be confirmed with the present Arduino package.
-No guessed GPIO mappings or replacement-board code were introduced.
+This is not fixable with `arduino-cli lib install`. `esp_video` and `esp_cam_sensor`
+are ESP-IDF *managed components* selected through Kconfig and compiled into the SDK.
+The Arduino core ships prebuilt static libraries against a fixed `sdkconfig`;
+adding a component means rebuilding that SDK (`esp32-arduino-lib-builder`) or using
+Arduino as an ESP-IDF component. Nor is there an Arduino library to install:
+the Library Manager index contains no Tab5 or SC2356/SC2336 entry, and neither
+M5Unified 0.2.22 nor M5GFX 0.2.29 exposes any camera API for this board.
+
+Every working Tab5 camera reference found is ESP-IDF, not Arduino: M5Stack's own
+[M5Tab5-UserDemo](https://github.com/m5stack/M5Tab5-UserDemo) (IDF 5.4.2, vendors
+`esp_video`/`esp_cam_sensor` under `platforms/tab5/components/`), Espressif's
+[esp-bsp `m5stack_tab5`](https://github.com/espressif/esp-bsp/tree/master/bsp/m5stack_tab5),
+the [`espp/m5stack-tab5`](https://components.espressif.com/components/espp/m5stack-tab5)
+registry component, and community projects such as
+[M5Tab5-VideoLink](https://github.com/amcchord/M5Tab5-VideoLink).
+
+Paths that would unblock the camera later, in increasing cost:
+rebuild the Arduino P4 SDK with the camera components enabled; build Arduino as an
+ESP-IDF component; or port the application to native ESP-IDF. All three also carry
+the unresolved SC2356-vs-SC2336 naming question and the untested grayscale/ISP
+format negotiation. None is on the critical path if barcode capture moves off-device.
+
+The naming mismatch still stands: product documentation says SC2356, the official
+reference contains `sensors/sc2336` and `CAMERA_SC2336`. Confirm the detected sensor
+ID before attempting any camera milestone.
 
 The C6 must also run firmware compatible with the core's ESP-Hosted transport.
 Linking `WiFi.h` is not an association test. Validate the existing C6 firmware,
 SDIO startup, reconnect behaviour and HTTP/TLS operation on hardware in milestone 7;
 use M5Stack's official C6 recovery instructions if a firmware mismatch is found.
+
+## USB Host as a camera-free scanner option
+
+Probe C shows the ESP-IDF USB Host stack links from Arduino on this target
+(`libusb.a`, `usb/usb_host.h`, `CONFIG_SOC_USB_OTG_SUPPORTED=y`). The managed
+`usb_host_hid` component is **not** in the SDK, so a HID boot-keyboard client would
+have to be written on top of `usb_host.h` or that component vendored (Apache-2.0).
+
+Unverified and hardware-dependent: whether the Tab5 USB-A port supplies host VBUS
+on battery, and how that rail is controlled (`M5.Power.setUsbOutput` is a candidate,
+unconfirmed for this board). Linking the stack is not evidence a device enumerates.
 
 ## Barcode decoder risk and next experiment
 
