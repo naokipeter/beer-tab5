@@ -69,7 +69,11 @@ void apply_sync() {
                                                 api_client::response_len(), &g_sync,
                                                 err, sizeof(err));
   if (outcome != api_protocol::Outcome::Ok) {
-    Serial.printf("[sync] rejected: %s\n", err);
+    // Print what actually arrived: an unreadable body is almost always an HTML
+    // error page or a login redirect, which the first line makes obvious.
+    Serial.printf("[sync] rejected: %s (%u bytes: %.160s)\n", err,
+                  static_cast<unsigned>(api_client::response_len()),
+                  api_client::response());
     return;
   }
   if (!g_sync.changed && g_sync.revision == product_catalog::revision()) {
@@ -194,6 +198,9 @@ void update(uint32_t now_ms) {
     if (duplicate) Serial.println("[backend] already recorded; treating as success");
     finish(Result::Success, "");
   } else {
+    Serial.printf("[backend] unreadable answer (%u bytes): %.160s\n",
+                  static_cast<unsigned>(api_client::response_len()),
+                  api_client::response());
     finish(Result::Failure, err[0] ? err : "Antwort unlesbar");
   }
 }

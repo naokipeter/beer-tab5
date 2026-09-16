@@ -30,6 +30,8 @@ constexpr BaseType_t kTaskCore = 0;
 constexpr int kMaxRedirects = 3;
 // Those echo URLs carry a long one-time key.
 constexpr size_t kMaxUrlBytes = 768;
+// Distinct from any HTTP status or HTTPClient error code.
+constexpr int kResponseTooLarge = -1000;
 
 TaskHandle_t g_task = nullptr;
 char g_request[api_protocol::kMaxRequestBytes];
@@ -48,6 +50,41 @@ void set_status(Status s) {
   __atomic_store_n(reinterpret_cast<volatile uint8_t*>(&g_status),
                    static_cast<uint8_t>(s), __ATOMIC_RELEASE);
 }
+
+// A fixed-capacity sink for HTTPClient::writeToStream. Reading the raw stream
+// from getStreamPtr() instead would copy the transfer framing into the buffer:
+// Apps Script replies chunked, and the library de-chunks inside writeToStream,
+// not in the stream it hands out. Overflow is recorded rather than written.
+class BoundedSink : public Stream {
+ public:
+  BoundedSink(char* buffer, size_t capacity) : buf_(buffer), cap_(capacity) {}
+
+  size_t write(uint8_t c) override { return write(&c, 1); }
+
+  size_t write(const uint8_t* data, size_t size) override {
+    const size_t room = (len_ + 1 < cap_) ? cap_ - 1 - len_ : 0;
+    const size_t n = size < room ? size : room;
+    if (n) memcpy(buf_ + len_, data, n);
+    len_ += n;
+    if (n < size) overflow_ = true;
+    // Claim everything so the library keeps draining the socket; the excess is
+    // discarded here rather than left to stall the connection.
+    return size;
+  }
+
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+
+  size_t length() const { return len_; }
+  bool overflowed() const { return overflow_; }
+
+ private:
+  char* buf_;
+  size_t cap_;
+  size_t len_ = 0;
+  bool overflow_ = false;
+};
 
 // One hop. Returns the HTTP status, or a negative HTTPClient error. On a
 // redirect the target is copied into `location`.
@@ -88,29 +125,20 @@ int one_request(const char* url, bool post, char* location, size_t location_cap)
   }
 
   if (code > 0) {
-    const int advertised = http.getSize();
-    NetworkClient* stream = http.getStreamPtr();
-    size_t written = 0;
-    const uint32_t deadline = millis() + config::request_timeout_ms;
-    // Bounded regardless of the advertised length, since a chunked response
-    // reports -1.
-    while (http.connected() && written < api_protocol::kMaxResponseBytes - 1) {
-      const size_t avail = stream->available();
-      if (avail == 0) {
-        if (static_cast<int32_t>(millis() - deadline) >= 0) break;
-        if (advertised >= 0 && written >= static_cast<size_t>(advertised)) break;
-        delay(5);
-        continue;
-      }
-      const size_t room = api_protocol::kMaxResponseBytes - 1 - written;
-      const size_t want = avail < room ? avail : room;
-      const int got = stream->readBytes(g_response + written, want);
-      if (got <= 0) break;
-      written += static_cast<size_t>(got);
-      if (advertised >= 0 && written >= static_cast<size_t>(advertised)) break;
+    BoundedSink sink(g_response, api_protocol::kMaxResponseBytes);
+    const int written = http.writeToStream(&sink);
+    g_response[sink.length()] = '\0';
+    g_response_len = sink.length();
+    if (sink.overflowed()) {
+      Serial.printf("[api] response exceeded %u bytes\n",
+                    static_cast<unsigned>(api_protocol::kMaxResponseBytes));
+      http.end();
+      return kResponseTooLarge;
     }
-    g_response[written] = '\0';
-    g_response_len = written;
+    if (written < 0) {
+      Serial.printf("[api] body read failed: %s\n",
+                    HTTPClient::errorToString(written).c_str());
+    }
   }
 
   http.end();
@@ -131,6 +159,13 @@ void perform() {
   for (int hop = 0; hop <= kMaxRedirects; ++hop) {
     code = one_request(url, post, location, sizeof(location));
     g_http_code = code;
+
+    if (code == kResponseTooLarge) {
+      snprintf(g_error_detail, sizeof(g_error_detail), "Antwort zu gross");
+      g_error = Error::TooLarge;
+      set_status(Status::Failed);
+      return;
+    }
 
     if (code <= 0) {
       Serial.printf("[api] transport error %d (%s)\n", code,

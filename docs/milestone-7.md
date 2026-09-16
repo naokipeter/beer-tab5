@@ -95,6 +95,13 @@ response. The response buffer is 8 KB in PSRAM.
 Nothing in the loop blocks: a slow or dead backend costs a spinner, not a frozen
 screen.
 
+The body is read through `HTTPClient::writeToStream` into a fixed-capacity sink,
+not from `getStreamPtr()`. The stream that `getStreamPtr` hands out is the raw
+socket: the library de-chunks inside `writeToStream`, so reading the stream
+directly copies the chunk framing into the buffer. Apps Script replies chunked,
+which makes that body unparseable JSON — and it presents as "Antwort unlesbar"
+with a perfectly healthy 200 and a successful `doPost` in the execution log.
+
 ## Verification
 
 Host:
