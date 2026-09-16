@@ -85,6 +85,22 @@ stack is not the place for it.
    "Erase All Flash Before Sketch Upload", or `esptool.py erase_flash`. Uploading
    a sketch alone does not clear the LittleFS partition.
 
+## Stale seeds
+
+The header's spare field carries a **seed generation**: which compiled-in seed the
+stored data descends from. Reflashing does not clear LittleFS, so a device keeps
+running on a catalog written by an older firmware — which is how the corrected
+EAN-13 check digits from milestone 8 failed to reach a device that had already
+stored the broken ones, and every purchase came back "Barcode ungueltig".
+
+On load, a catalog whose generation does not match this build is discarded and
+reseeded — but **only if its revision is 0**, meaning it has never synced. Data
+that came from the backend is authoritative whatever seed preceded it, and must
+never be thrown away because a constant changed.
+
+Bump `kSeedGeneration` in `product_catalog.cpp` whenever the seed changes in a
+way that makes stored copies of it wrong.
+
 The wear question is open: the catalog is rewritten whole on every change. With a
 handful of changes a week that is irrelevant, but it is worth revisiting if the
 backend sync in milestone 7 ends up rewriting on every poll. Only write when the

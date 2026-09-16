@@ -15,6 +15,12 @@ bool g_dirty = false;
 
 constexpr const char* kPath = "/catalog.bin";
 
+// Bump whenever the compiled-in seed changes in a way that makes previously
+// stored copies of it wrong. Generation 2 corrected eight invalid EAN-13 check
+// digits, which the backend rejects. A device that stored generation 1 and has
+// never synced reseeds instead of keeping data the server will refuse.
+constexpr uint16_t kSeedGeneration = 2;
+
 // Static rather than on the stack: the blob is several kilobytes and the loop
 // task's stack is not the place for it.
 uint8_t g_blob[catalog_codec::kMaxCatalogBytes];
@@ -71,18 +77,27 @@ void begin() {
   if (device_storage::read(kPath, g_blob, sizeof(g_blob), &len)) {
     uint8_t count = 0;
     uint32_t revision = 0;
+    uint16_t generation = 0;
     if (catalog_codec::decode_catalog(g_blob, len, g_items, settings::max_products,
-                                      &count, &revision)) {
-      g_count = count;
-      g_revision = revision;
-      Serial.printf("[catalog] loaded %u products, revision %lu\n",
-                    static_cast<unsigned>(g_count),
-                    static_cast<unsigned long>(g_revision));
-      return;
+                                      &count, &revision, &generation)) {
+      // Data that came from the backend is authoritative whatever seed preceded
+      // it, so only a never-synced catalog is discarded over a stale seed.
+      if (revision == 0 && generation != kSeedGeneration) {
+        Serial.printf("[catalog] stored seed generation %u is stale; reseeding\n",
+                      static_cast<unsigned>(generation));
+      } else {
+        g_count = count;
+        g_revision = revision;
+        Serial.printf("[catalog] loaded %u products, revision %lu\n",
+                      static_cast<unsigned>(g_count),
+                      static_cast<unsigned long>(g_revision));
+        return;
+      }
+    } else {
+      // Refuse a damaged file rather than running on half of it. Reseeding loses
+      // local edits, which is why the write path is atomic in the first place.
+      Serial.println("[catalog] stored catalog rejected; reseeding");
     }
-    // Refuse a damaged file rather than running on half of it. Reseeding loses
-    // local edits, which is why the write path is atomic in the first place.
-    Serial.println("[catalog] stored catalog rejected; reseeding");
   }
 
   seed();
@@ -102,8 +117,9 @@ bool dirty() { return g_dirty; }
 
 void flush() {
   if (!g_dirty) return;
-  const size_t len =
-      catalog_codec::encode_catalog(g_items, g_count, g_revision, g_blob, sizeof(g_blob));
+  const size_t len = catalog_codec::encode_catalog(g_items, g_count, g_revision,
+                                                   kSeedGeneration, g_blob,
+                                                   sizeof(g_blob));
   if (len == 0) {
     Serial.println("[catalog] encode failed; not writing");
     return;

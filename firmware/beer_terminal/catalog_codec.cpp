@@ -79,7 +79,8 @@ void finalise(uint8_t* out, size_t len) {
 
 // Validates the header and the CRC. Returns the record count on success.
 bool check(const uint8_t* in, size_t len, uint32_t magic, uint16_t record_size,
-           uint8_t capacity_items, uint16_t* out_count, uint32_t* out_revision) {
+           uint8_t capacity_items, uint16_t* out_count, uint32_t* out_revision,
+           uint16_t* out_seed_generation) {
   if (len < kHeaderBytes) return false;
   if (get_u32(in) != magic) return false;
   if (get_u16(in + 4) != kFormatVersion) return false;
@@ -100,6 +101,7 @@ bool check(const uint8_t* in, size_t len, uint32_t magic, uint16_t record_size,
 
   *out_count = count;
   if (out_revision) *out_revision = get_u32(in + 8);
+  if (out_seed_generation) *out_seed_generation = get_u16(in + 14);
   return true;
 }
 
@@ -119,7 +121,8 @@ size_t max_residents_bytes() {
 }
 
 size_t encode_catalog(const product_catalog::Product* items, uint8_t count,
-                      uint32_t revision, uint8_t* out, size_t capacity) {
+                      uint32_t revision, uint16_t seed_generation, uint8_t* out,
+                      size_t capacity) {
   if (!items || !out) return 0;
   const size_t len = kHeaderBytes + static_cast<size_t>(count) * kCatalogRecord;
   if (capacity < len) return 0;
@@ -129,7 +132,7 @@ size_t encode_catalog(const product_catalog::Product* items, uint8_t count,
   put_u16(out + 6, static_cast<uint16_t>(kCatalogRecord));
   put_u32(out + 8, revision);
   put_u16(out + 12, count);
-  put_u16(out + 14, 0);
+  put_u16(out + 14, seed_generation);
 
   uint8_t* p = out + kHeaderBytes;
   for (uint8_t i = 0; i < count; ++i) {
@@ -148,11 +151,11 @@ size_t encode_catalog(const product_catalog::Product* items, uint8_t count,
 
 bool decode_catalog(const uint8_t* in, size_t len, product_catalog::Product* items,
                     uint8_t capacity_items, uint8_t* out_count,
-                    uint32_t* out_revision) {
+                    uint32_t* out_revision, uint16_t* out_seed_generation) {
   if (!in || !items || !out_count) return false;
   uint16_t count = 0;
   if (!check(in, len, kMagicCatalog, static_cast<uint16_t>(kCatalogRecord),
-             capacity_items, &count, out_revision)) {
+             capacity_items, &count, out_revision, out_seed_generation)) {
     return false;
   }
   const uint8_t* p = in + kHeaderBytes;
@@ -199,7 +202,7 @@ bool decode_residents(const uint8_t* in, size_t len, resident_directory::Entry* 
   if (!in || !entries || !out_count) return false;
   uint16_t count = 0;
   if (!check(in, len, kMagicResidents, static_cast<uint16_t>(kResidentRecord),
-             capacity_items, &count, nullptr)) {
+             capacity_items, &count, nullptr, nullptr)) {
     return false;
   }
   const uint8_t* p = in + kHeaderBytes;

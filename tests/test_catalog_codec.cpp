@@ -52,17 +52,19 @@ int main() {
 
   std::vector<uint8_t> buf(catalog_codec::max_catalog_bytes());
   const size_t len = catalog_codec::encode_catalog(
-      in.data(), static_cast<uint8_t>(in.size()), 42, buf.data(), buf.size());
+      in.data(), static_cast<uint8_t>(in.size()), 42, 7, buf.data(), buf.size());
   check(len > 0, "encode returns a length");
 
   product_catalog::Product out[settings::max_products]{};
   uint8_t count = 0;
   uint32_t revision = 0;
+  uint16_t generation = 0;
   check(catalog_codec::decode_catalog(buf.data(), len, out, settings::max_products,
-                                      &count, &revision),
+                                      &count, &revision, &generation),
         "round trip decodes");
   check(count == in.size(), "record count survives");
   check(revision == 42, "revision survives");
+  check(generation == 7, "seed generation survives");
   bool all_same = count == in.size();
   for (uint8_t i = 0; i < count && all_same; ++i) all_same = same(in[i], out[i]);
   check(all_same, "every field survives, including umlauts and full-width strings");
@@ -73,7 +75,7 @@ int main() {
     bad[len / 2] ^= 0x01;
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
-                                         &c, nullptr),
+                                         &c, nullptr, nullptr),
           "a single flipped payload bit is rejected");
   }
   {
@@ -81,13 +83,13 @@ int main() {
     bad[8] ^= 0x01;  // revision field, inside the CRC's coverage
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
-                                         &c, nullptr),
+                                         &c, nullptr, nullptr),
           "a flipped header bit is rejected");
   }
   {
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(buf.data(), len - 1, out,
-                                         settings::max_products, &c, nullptr),
+                                         settings::max_products, &c, nullptr, nullptr),
           "a truncated blob is rejected");
   }
   {
@@ -95,7 +97,7 @@ int main() {
     bad[0] ^= 0xFF;
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
-                                         &c, nullptr),
+                                         &c, nullptr, nullptr),
           "a foreign file is rejected on its magic");
   }
   {
@@ -103,31 +105,33 @@ int main() {
     bad[4] = 99;  // unknown format version
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(bad.data(), len, out, settings::max_products,
-                                         &c, nullptr),
+                                         &c, nullptr, nullptr),
           "an unknown format version is rejected");
   }
   {
     // A blob holding more records than this build can hold must not overrun.
     uint8_t c = 0;
-    check(!catalog_codec::decode_catalog(buf.data(), len, out, 1, &c, nullptr),
+    check(!catalog_codec::decode_catalog(buf.data(), len, out, 1, &c, nullptr, nullptr),
           "a blob exceeding capacity is rejected");
   }
   {
     // A rejected decode must leave the caller's count untouched.
     uint8_t c = 123;
     catalog_codec::decode_catalog(buf.data(), len - 1, out, settings::max_products, &c,
-                                  nullptr);
+                                  nullptr, nullptr);
     check(c == 123, "a rejected decode does not write out_count");
   }
 
   // Empty catalog is a legitimate state: every beer archived away.
   {
     std::vector<uint8_t> e(catalog_codec::max_catalog_bytes());
-    const size_t n = catalog_codec::encode_catalog(in.data(), 0, 7, e.data(), e.size());
+    const size_t n =
+        catalog_codec::encode_catalog(in.data(), 0, 7, 1, e.data(), e.size());
     uint8_t c = 9;
     uint32_t rev = 0;
     check(n > 0 && catalog_codec::decode_catalog(e.data(), n, out,
-                                                 settings::max_products, &c, &rev) &&
+                                                 settings::max_products, &c, &rev,
+                                                 nullptr) &&
               c == 0 && rev == 7,
           "an empty catalog round trips");
   }
@@ -136,7 +140,7 @@ int main() {
   {
     std::vector<uint8_t> small(len - 1);
     check(catalog_codec::encode_catalog(in.data(), static_cast<uint8_t>(in.size()), 1,
-                                        small.data(), small.size()) == 0,
+                                        1, small.data(), small.size()) == 0,
           "encoding into too small a buffer refuses");
   }
 
@@ -159,11 +163,24 @@ int main() {
   check(rcount == 3 && std::strcmp(rout[2].name, "Jörg") == 0,
         "resident names survive, including umlauts");
 
+  // The generation travels in the header, so a device can tell that a stored
+  // catalog descends from a seed that has since been corrected.
+  {
+    std::vector<uint8_t> g(catalog_codec::max_catalog_bytes());
+    const size_t n = catalog_codec::encode_catalog(in.data(), 1, 0, 1, g.data(), g.size());
+    uint8_t c = 0;
+    uint32_t rev = 0;
+    uint16_t gen = 0;
+    catalog_codec::decode_catalog(g.data(), n, out, settings::max_products, &c, &rev,
+                                  &gen);
+    check(rev == 0 && gen == 1, "a never-synced catalog reports its seed generation");
+  }
+
   // The two blob kinds must not be interchangeable.
   {
     uint8_t c = 0;
     check(!catalog_codec::decode_catalog(rbuf.data(), rlen, out, settings::max_products,
-                                         &c, nullptr),
+                                         &c, nullptr, nullptr),
           "a residents blob is not accepted as a catalog");
   }
 

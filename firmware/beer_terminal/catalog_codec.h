@@ -32,8 +32,12 @@ size_t max_catalog_bytes();
 size_t max_residents_bytes();
 
 // Return the number of bytes written, or 0 if `capacity` is too small.
+// `seed_generation` records which compiled-in seed the data descends from, so a
+// device can notice that its stored catalog predates a correction to that seed.
+// It occupies the header field previously reserved.
 size_t encode_catalog(const product_catalog::Product* items, uint8_t count,
-                      uint32_t revision, uint8_t* out, size_t capacity);
+                      uint32_t revision, uint16_t seed_generation, uint8_t* out,
+                      size_t capacity);
 size_t encode_residents(const resident_directory::Entry* entries, uint8_t count,
                         uint8_t* out, size_t capacity);
 
@@ -41,7 +45,8 @@ size_t encode_residents(const resident_directory::Entry* entries, uint8_t count,
 // mismatch, or a count beyond `capacity_items`. `out_count` is only written on
 // success, so a rejected blob leaves the caller's data untouched.
 bool decode_catalog(const uint8_t* in, size_t len, product_catalog::Product* items,
-                    uint8_t capacity_items, uint8_t* out_count, uint32_t* out_revision);
+                    uint8_t capacity_items, uint8_t* out_count, uint32_t* out_revision,
+                    uint16_t* out_seed_generation);
 bool decode_residents(const uint8_t* in, size_t len, resident_directory::Entry* entries,
                       uint8_t capacity_items, uint8_t* out_count);
 
