@@ -69,10 +69,19 @@ bool image_source_allowed(const char* url) {
   if (colon) host_len = static_cast<size_t>(static_cast<const char*>(colon) - host);
   if (host_len == 0 || host_len > 253) return false;
 
-  static const char kSuffix[] = ".openfoodfacts.org";
-  const size_t n = sizeof(kSuffix) - 1;
-  if (host_len == n - 1 && strncmp(host, kSuffix + 1, n - 1) == 0) return true;
-  return host_len > n && strncmp(host + host_len - n, kSuffix, n) == 0;
+  // Open Food Facts for catalogue photos, and Google's user content host so a
+  // beer it has no picture for can be given one by hand. Both are reached only
+  // through a URL an admin put in the sheet, so this is defence in depth rather
+  // than the primary control.
+  static const char* const kSuffixes[] = {".openfoodfacts.org",
+                                          ".googleusercontent.com"};
+  for (const char* suffix : kSuffixes) {
+    const size_t n = strlen(suffix);
+    if (host_len > n && strncmp(host + host_len - n, suffix, n) == 0) return true;
+    // Also accept the bare domain, i.e. the suffix without its leading dot.
+    if (host_len == n - 1 && strncmp(host, suffix + 1, n - 1) == 0) return true;
+  }
+  return false;
 }
 
 size_t build_sync(char* out, size_t capacity, const char* token, const char* device,

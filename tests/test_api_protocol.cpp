@@ -162,6 +162,8 @@ int main() {
           "another host is refused");
     check(!redirect_target_allowed("https://google.com.evil.example/x"),
           "a suffix lookalike is refused");
+    check(!redirect_target_allowed("https://images.openfoodfacts.org/x.jpg"),
+          "an image host is not an API redirect target");
     check(!redirect_target_allowed("https://notgoogle.com/x"),
           "a host merely ending in the wrong place is refused");
     check(!redirect_target_allowed("https://evil.example/?x=.google.com"),
@@ -195,7 +197,13 @@ int main() {
     check(!image_source_allowed(""), "an empty url is refused");
     // The device checks for itself rather than trusting the backend's validation.
     check(!image_source_allowed("https://script.google.com/x.jpg"),
-          "even our own backend host is not an image source");
+          "our backend host is not an image source");
+    // Google's user content host, so a beer Open Food Facts has no picture for
+    // can be given one by hand.
+    check(image_source_allowed("https://lh3.googleusercontent.com/pw/AP1Gcz=w150-h200"),
+          "a Google Photos link is allowed");
+    check(!image_source_allowed("https://googleusercontent.com.evil.example/x.jpg"),
+          "a Google user content lookalike is refused");
   }
 
   std::printf("\nacknowledgements\n");

@@ -16,7 +16,10 @@ struct Product {
   char name[40];
   int32_t price_rappen;  // Integer rappen; never a floating-point CHF amount.
   bool free_item;
-  char image_url[160];   // Open Food Facts 400px variant; empty when unavailable.
+  // Photo URL. 256 bytes because a Google Photos link runs past 220 characters,
+  // where an Open Food Facts one fits in 100. Truncating one silently produces a
+  // download that can only fail.
+  char image_url[256];
   bool active;           // false = archived, hidden from the grid.
 };
 

@@ -16,8 +16,8 @@ constexpr size_t kCrcOffset = 16;
 // Fixed on-disk field widths. Changing any of these needs a format version bump.
 constexpr size_t kBarcode = 14;
 constexpr size_t kName = 40;
-constexpr size_t kImageUrl = 160;
-constexpr size_t kCatalogRecord = kBarcode + kName + 4 + 1 + kImageUrl;  // 219
+constexpr size_t kImageUrl = 256;
+constexpr size_t kCatalogRecord = kBarcode + kName + 4 + 1 + kImageUrl;  // 315
 constexpr size_t kResidentId = 12;
 constexpr size_t kResidentName = 24;
 constexpr size_t kResidentRecord = kResidentId + kResidentName;  // 36

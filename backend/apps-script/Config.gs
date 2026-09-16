@@ -29,7 +29,7 @@ var LIMITS = {
   maxResidents: 11,
   maxNameChars: 39,
   maxBarcodeChars: 13,
-  maxImageUrlChars: 159,
+  maxImageUrlChars: 255,
   maxPriceRappen: 99999
 };
 
