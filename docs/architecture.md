@@ -53,6 +53,54 @@ entry plus an explicit Free option. Default UI: high contrast, landscape, large
 resident buttons, minimal text. Real resident names are required only when
 deploying the user-selection UI.
 
+## Catalog grid layout
+
+Panel is 720x1280 native (M5GFX `cfg.memory_width/height`), so **1280x720 landscape**
+at the configured rotation 3. Reserve a 64 px header and a 72 px footer; the grid
+area is 1280 x 584 less a 16 px margin, with 16 px gaps.
+
+Tile count adapts to stock rather than paging a fixed grid:
+
+    rows = max(1, floor(sqrt(N)))
+    cols = ceil(N / rows)
+
+N=1..3 give a single row of N; 4 gives 2x2; 5..6 give 2x3; 7..8 give 2x4; 9 gives 3x3.
+A partial last row is centred at the same tile size — never stretched, so tile size
+is constant within a screen. Above ~12 products revisit this; a scrolling list with a
+letter index beats a grid once tiles fall below roughly 240 px.
+
+The card switches orientation on the tile's own aspect ratio: photo left / text right
+when wider than 1.35:1 (as at N=4, 616x284), photo on top otherwise. This keeps the
+grid rule above intact while avoiding wasted space in wide tiles.
+
+"Nicht gelistet" (enters NEW_PRODUCT) and "Abbrechen" live in the fixed footer, not
+in the grid, so product count alone drives layout and the constant actions never move.
+
+## Product photos
+
+Tiles show name, price and a product photo. Open Food Facts serves pre-sized image
+variants (`...front_XX.N.400.jpg`, plus 200 and 100), so the existing `image_url`
+column stores the 400 px URL directly and nothing needs server-side resizing.
+`esp_driver_jpeg` ships in the P4 SDK, so decode is hardware-accelerated.
+
+The phone `manage` page resolves the OFF image at registration time and writes the
+URL to the sheet. On catalog sync the device fetches each new or changed image **once**,
+caches the bytes to LittleFS as `/img/<barcode>.jpg`, and re-fetches only when that
+product's `updated_at` changes. Decode into PSRAM on grid build, never per frame —
+worst case is about 184 KB of RGB565 at N=2, where photos are largest.
+
+Constraints:
+
+- **Coverage is the main risk.** OFF's Swiss beer coverage is patchy; expect a
+  significant share of products with no usable photo. The fallback — a deterministic
+  colour derived from the barcode plus the product initial — is a first-class design
+  case, not a placeholder, and the `manage` page needs a photo-replacement upload.
+- Photos vary in crop, rotation and aspect. Letterbox into the photo box on a neutral
+  ground; never stretch to fill.
+- `images.openfoodfacts.org` is a second TLS host besides the Apps Script endpoint.
+  Pin both roots explicitly rather than shipping a full root store.
+- OFF images are CC-BY-SA. Acceptable for a private fridge display; do not republish.
+
 ## Registration and removal
 
 Primary — **phone page**: an HTML `manage` page served by the same Apps Script web
