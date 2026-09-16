@@ -175,29 +175,6 @@ int main() {
     check(!redirect_target_allowed("https://google.com/x"), "the bare apex is refused");
   }
 
-  std::printf("\nimage sources\n");
-  {
-    using api_protocol::image_source_allowed;
-    check(image_source_allowed("https://images.openfoodfacts.org/images/x.400.jpg"),
-          "an Open Food Facts image host is allowed");
-    check(image_source_allowed("https://openfoodfacts.org/x.jpg"),
-          "the bare Open Food Facts domain is allowed");
-    check(!image_source_allowed("http://images.openfoodfacts.org/x.jpg"),
-          "plain http is refused, so a photo cannot be swapped in transit");
-    check(!image_source_allowed("https://evil.example/x.jpg"),
-          "another host is refused");
-    check(!image_source_allowed("https://openfoodfacts.org.evil.example/x.jpg"),
-          "a suffix lookalike is refused");
-    check(!image_source_allowed("https://notopenfoodfacts.org/x.jpg"),
-          "a host ending in the wrong place is refused");
-    check(!image_source_allowed("https://images.openfoodfacts.org@evil.example/x"),
-          "userinfo before an at-sign cannot smuggle a host past the check");
-    check(!image_source_allowed(""), "an empty url is refused");
-    // The device checks for itself rather than trusting the backend's validation.
-    check(!image_source_allowed("https://script.google.com/x.jpg"),
-          "even our own backend host is not an image source");
-  }
-
   std::printf("\nacknowledgements\n");
   {
     bool dup = true;

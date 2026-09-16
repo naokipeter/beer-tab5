@@ -23,16 +23,6 @@ bool read(const char* path, uint8_t* buf, size_t capacity, size_t* out_len);
 bool write(const char* path, const uint8_t* data, size_t len);
 
 bool remove(const char* path);
-bool exists(const char* path);
-size_t size_of(const char* path);
-
-// Appends to a file, creating it if needed. Used to stream a download to flash
-// without holding it in RAM first.
-bool append(const char* path, const uint8_t* data, size_t len);
-
-// Calls `visit` for every file directly inside `dir`, with the bare name.
-void list(const char* dir, void (*visit)(const char* name, void* ctx), void* ctx);
-bool make_dir(const char* path);
 
 // Free space in bytes, for the serial log and later the image cache budget.
 size_t free_bytes();

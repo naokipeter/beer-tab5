@@ -45,11 +45,6 @@ size_t build_void_purchase(char* out, size_t capacity, const char* token,
 // rest of the contract, and is tested on the host.
 bool redirect_target_allowed(const char* url);
 
-// True only for an https URL on openfoodfacts.org. Product photo URLs come from
-// the backend, which validates them too, but the device decides for itself what
-// it will connect to rather than trusting a value it was handed.
-bool image_source_allowed(const char* url);
-
 struct SyncResult {
   uint32_t revision;
   bool changed;
