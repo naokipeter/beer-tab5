@@ -42,9 +42,9 @@ int main() {
   std::printf("catalog persistence format\n");
 
   std::vector<product_catalog::Product> in;
-  in.push_back(make("7610807000019", "Feldschlösschen Original", 180, false, true,
+  in.push_back(make("7610807000016", "Feldschlösschen Original", 180, false, true,
                     "https://images.openfoodfacts.org/x/front_de.4.400.jpg"));
-  in.push_back(make("7613300000086", "Turbinenbräu Gassenhauer", 0, true, false, ""));
+  in.push_back(make("7613300000088", "Turbinenbräu Gassenhauer", 0, true, false, ""));
   // A name and URL that exactly fill their fields, to catch an off-by-one in the
   // terminator handling.
   in.push_back(make("1234567890128", std::string(39, 'N').c_str(), 9999, false, true,

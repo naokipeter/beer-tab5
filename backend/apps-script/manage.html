@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root { --bg:#12120f; --surface:#22221d; --alt:#2c2c26; --text:#f2f0e9;
+          --muted:#9a988f; --accent:#e5c46a; --ok:#639922; --danger:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text);
+         font-family:-apple-system,system-ui,sans-serif; font-size:16px; }
+  h1 { font-size:20px; font-weight:500; margin:0 0 16px; }
+  h2 { font-size:16px; font-weight:500; margin:24px 0 8px; color:var(--muted); }
+  button { font:inherit; border:0; border-radius:8px; padding:14px 16px;
+           background:var(--alt); color:var(--text); min-height:48px; }
+  button.primary { background:var(--accent); color:#12120f; }
+  button.danger { background:var(--danger); color:#fff; }
+  button:disabled { opacity:.5; }
+  input, select { font:inherit; width:100%; padding:14px; border-radius:8px;
+                  border:1px solid #3a3a33; background:var(--surface);
+                  color:var(--text); min-height:48px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:12px 0 4px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row > * { flex:1; }
+  .card { background:var(--surface); border-radius:10px; padding:12px;
+          margin-bottom:8px; display:flex; gap:12px; align-items:center; }
+  .card img { width:48px; height:48px; object-fit:contain; border-radius:6px;
+              background:var(--alt); flex:none; }
+  .card .grow { flex:1; min-width:0; }
+  .card .name { display:block; overflow:hidden; text-overflow:ellipsis;
+                white-space:nowrap; }
+  .card .price { color:var(--accent); font-size:14px; }
+  .archived { opacity:.55; }
+  .msg { padding:12px; border-radius:8px; margin:12px 0; display:none; }
+  .msg.err { background:#3a1d1a; color:#ffb4a8; display:block; }
+  .msg.ok { background:#1e2d10; color:#c9e6a0; display:block; }
+  #video { width:100%; border-radius:10px; background:#000; display:none; }
+  .hint { font-size:13px; color:var(--muted); margin-top:4px; }
+</style>
+</head>
+<body>
+<h1>Bierkasse verwalten</h1>
+<div id="msg" class="msg"></div>
+
+<h2>Neues Bier</h2>
+<div class="row">
+  <button id="scan">Barcode scannen</button>
+  <button id="stop" style="display:none">Scan stoppen</button>
+</div>
+<video id="video" playsinline muted></video>
+<div class="hint" id="scanhint"></div>
+
+<label for="barcode">Barcode (leer lassen, wenn keiner)</label>
+<input id="barcode" inputmode="numeric" autocomplete="off">
+<label for="name">Name</label>
+<input id="name" autocomplete="off">
+<label for="price">Preis in CHF</label>
+<input id="price" inputmode="decimal" autocomplete="off" placeholder="2.40">
+<label class="row" style="align-items:center; margin-top:12px">
+  <input type="checkbox" id="free" style="width:auto; min-height:0; flex:none">
+  <span style="flex:1; color:var(--text)">Gratis</span>
+</label>
+<div class="row" style="margin-top:16px">
+  <button id="save" class="primary">Speichern</button>
+</div>
+
+<h2>Im Kühlschrank <span id="count" class="hint"></span></h2>
+<div id="active"></div>
+
+<h2>Archiviert</h2>
+<div id="archived"></div>
+
+<h2>Verbrauch</h2>
+<div id="summary"></div>
+
+<script>
+var state = {products: [], residents: [], maxActive: 8};
+var scanner = {stream: null, detector: null, timer: null};
+
+function show(text, isError) {
+  var el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (isError ? 'err' : 'ok');
+  if (!isError) setTimeout(function() { el.className = 'msg'; }, 4000);
+}
+
+function rappenFromInput(value) {
+  var s = String(value || '').replace(',', '.').trim();
+  if (!s) return null;
+  if (!/^[0-9]+([.][0-9]{1,2})?$/.test(s)) return null;
+  return Math.round(parseFloat(s) * 100);
+}
+
+function chf(rappen, free) {
+  return free ? 'Gratis' : 'CHF ' + (rappen / 100).toFixed(2);
+}
+
+function render(data) {
+  state = data;
+  document.getElementById('count').textContent =
+      data.activeCount + ' von ' + data.maxActive;
+
+  var active = document.getElementById('active');
+  var archived = document.getElementById('archived');
+  active.innerHTML = '';
+  archived.innerHTML = '';
+
+  data.products.forEach(function(p) {
+    var card = document.createElement('div');
+    card.className = 'card' + (p.active ? '' : ' archived');
+
+    var img = document.createElement('img');
+    if (p.image_url) img.src = p.image_url;
+    card.appendChild(img);
+
+    var grow = document.createElement('div');
+    grow.className = 'grow';
+    var name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = p.name;
+    var price = document.createElement('span');
+    price.className = 'price';
+    price.textContent = chf(p.price_rappen, p.free);
+    grow.appendChild(name);
+    grow.appendChild(price);
+    card.appendChild(grow);
+
+    var edit = document.createElement('button');
+    edit.textContent = 'Preis';
+    edit.style.flex = 'none';
+    edit.onclick = function() { changePrice(p); };
+    card.appendChild(edit);
+
+    var toggle = document.createElement('button');
+    toggle.textContent = p.active ? 'Archivieren' : 'Zurück';
+    toggle.style.flex = 'none';
+    if (p.active) toggle.className = 'danger';
+    toggle.onclick = function() { setActive(p, !p.active); };
+    card.appendChild(toggle);
+
+    (p.active ? active : archived).appendChild(card);
+  });
+
+  if (!active.children.length) active.innerHTML = '<p class="hint">Nichts im Kühlschrank.</p>';
+  if (!archived.children.length) archived.innerHTML = '<p class="hint">Nichts archiviert.</p>';
+}
+
+function busy(on) {
+  Array.prototype.forEach.call(document.querySelectorAll('button'), function(b) {
+    b.disabled = on;
+  });
+}
+
+function call(fn, args, after) {
+  busy(true);
+  google.script.run
+      .withSuccessHandler(function(res) { busy(false); if (after) after(res); })
+      .withFailureHandler(function(err) { busy(false); show(err.message || String(err), true); })
+      [fn].apply(null, args || []);
+}
+
+function reload() { call('adminLoad', [], render); }
+
+function changePrice(p) {
+  var input = prompt('Neuer Preis für ' + p.name + ' in CHF (leer = gratis)',
+                     p.free ? '' : (p.price_rappen / 100).toFixed(2));
+  if (input === null) return;
+  var free = input.trim() === '';
+  var rappen = free ? 0 : rappenFromInput(input);
+  if (!free && rappen === null) { show('Preis ungültig', true); return; }
+  if (!confirm(p.name + ' kostet neu ' + chf(rappen, free) + '. Wirklich ändern?')) return;
+  call('adminChangePrice', [p.barcode, p.name, rappen, free], function(res) {
+    render(res);
+    show('Preis geändert');
+  });
+}
+
+function setActive(p, active) {
+  if (p.active && !confirm(p.name + ' aus dem Kühlschrank nehmen?')) return;
+  call('adminSetActive', [p.barcode, p.name, active], function(res) {
+    render(res);
+    show(active ? 'Zurück im Kühlschrank' : 'Archiviert');
+  });
+}
+
+document.getElementById('save').onclick = function() {
+  var free = document.getElementById('free').checked;
+  var rappen = free ? 0 : rappenFromInput(document.getElementById('price').value);
+  if (!free && rappen === null) { show('Preis ungültig', true); return; }
+  var name = document.getElementById('name').value.trim();
+  if (!name) { show('Name fehlt', true); return; }
+
+  call('adminSaveProduct', [{
+    barcode: document.getElementById('barcode').value.trim(),
+    name: name,
+    price_rappen: rappen,
+    free: free,
+    image_url: document.getElementById('imageurl') ? document.getElementById('imageurl').value : '',
+    active: true
+  }], function(res) {
+    render(res);
+    show('Gespeichert');
+    document.getElementById('barcode').value = '';
+    document.getElementById('name').value = '';
+    document.getElementById('price').value = '';
+    document.getElementById('free').checked = false;
+    window.foundImage = '';
+  });
+};
+
+/* Open Food Facts lookup. Runs in the phone's browser, not on the server, so no
+   Apps Script quota is spent and the request carries no credentials. */
+function lookupOpenFoodFacts(barcode) {
+  var url = 'https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(barcode) +
+            '.json?fields=product_name,brands,image_front_url';
+  fetch(url)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || data.status !== 1 || !data.product) {
+          show('Nicht in Open Food Facts - Name bitte eintippen', false);
+          return;
+        }
+        var p = data.product;
+        var name = [p.brands, p.product_name].filter(Boolean).join(' ').trim();
+        if (name && !document.getElementById('name').value) {
+          document.getElementById('name').value = name.substring(0, 39);
+        }
+        if (p.image_front_url) {
+          // The terminal fetches a 400px variant; ask for that size directly.
+          window.foundImage = String(p.image_front_url).replace(/[.]full[.]jpg$/, '.400.jpg');
+          ensureImageField();
+        }
+      })
+      .catch(function() { show('Open Food Facts nicht erreichbar', true); });
+}
+
+function ensureImageField() {
+  var existing = document.getElementById('imageurl');
+  if (!existing) {
+    existing = document.createElement('input');
+    existing.id = 'imageurl';
+    existing.type = 'hidden';
+    document.body.appendChild(existing);
+  }
+  existing.value = window.foundImage || '';
+}
+
+document.getElementById('barcode').addEventListener('change', function() {
+  var v = this.value.trim();
+  if (v.length >= 8) lookupOpenFoodFacts(v);
+});
+
+/* Barcode scanning uses the browser's own BarcodeDetector where it exists
+   (Android Chrome). iOS Safari does not implement it, so that path simply is not
+   offered and the number is typed instead. No scanning library is loaded: this
+   page is served by Apps Script and should not pull code from a third party. */
+function scanSupported() {
+  return 'BarcodeDetector' in window && navigator.mediaDevices &&
+         navigator.mediaDevices.getUserMedia;
+}
+
+function stopScan() {
+  if (scanner.timer) { clearInterval(scanner.timer); scanner.timer = null; }
+  if (scanner.stream) {
+    scanner.stream.getTracks().forEach(function(t) { t.stop(); });
+    scanner.stream = null;
+  }
+  document.getElementById('video').style.display = 'none';
+  document.getElementById('stop').style.display = 'none';
+  document.getElementById('scan').style.display = '';
+}
+
+document.getElementById('stop').onclick = stopScan;
+
+document.getElementById('scan').onclick = function() {
+  if (!scanSupported()) {
+    show('Dieser Browser kann nicht scannen - Barcode bitte eintippen', true);
+    return;
+  }
+  var video = document.getElementById('video');
+  navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}})
+      .then(function(stream) {
+        scanner.stream = stream;
+        video.srcObject = stream;
+        video.style.display = 'block';
+        document.getElementById('scan').style.display = 'none';
+        document.getElementById('stop').style.display = '';
+        return video.play();
+      })
+      .then(function() {
+        scanner.detector = new BarcodeDetector({formats: ['ean_13', 'ean_8', 'upc_a']});
+        var lastCode = '';
+        scanner.timer = setInterval(function() {
+          scanner.detector.detect(video)
+              .then(function(codes) {
+                if (!codes.length) return;
+                var code = codes[0].rawValue;
+                // Same code twice running, the way the terminal would have
+                // required, so a single blurred frame cannot set the field.
+                if (code !== lastCode) { lastCode = code; return; }
+                stopScan();
+                document.getElementById('barcode').value = code;
+                lookupOpenFoodFacts(code);
+                show('Gescannt: ' + code);
+              })
+              .catch(function() {});
+        }, 250);
+      })
+      .catch(function() {
+        show('Kamera nicht freigegeben', true);
+        stopScan();
+      });
+};
+
+document.getElementById('scanhint').textContent =
+    scanSupported() ? 'Kamera liest EAN-13, EAN-8 und UPC-A.'
+                    : 'Dieser Browser kann nicht scannen (z. B. iOS Safari). Barcode eintippen.';
+
+call('adminSummary', [], function(rows) {
+  var el = document.getElementById('summary');
+  if (!rows.length) { el.innerHTML = '<p class="hint">Noch nichts gebucht.</p>'; return; }
+  rows.sort(function(a, b) { return b.total_rappen - a.total_rappen; });
+  el.innerHTML = '';
+  rows.forEach(function(r) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<div class="grow"><span class="name"></span></div>' +
+                     '<span class="price"></span>';
+    card.querySelector('.name').textContent = r.name + ' - ' + r.drinks + ' Getränke';
+    card.querySelector('.price').textContent = chf(r.total_rappen, false);
+    el.appendChild(card);
+  });
+});
+
+reload();
+</script>
+</body>
+</html>

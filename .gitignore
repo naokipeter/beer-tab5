@@ -4,3 +4,8 @@ build/
 secrets.h
 wifi_secrets.h
 *.local.*
+# Editor swap and backup files. A swap file of secrets.h holds the secrets.
+*.swp
+*.swo
+*~
+.*.sw?

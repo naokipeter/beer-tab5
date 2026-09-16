@@ -42,7 +42,7 @@ int main() {
     // A name with a quote and an umlaut is the classic way a hand-rolled encoder
     // produces invalid JSON.
     const size_t n = api_protocol::build_record_purchase(
-        req, sizeof(req), "tok", "fridge-01", "fridge-01-abc-1", "7610807000019",
+        req, sizeof(req), "tok", "fridge-01", "fridge-01-abc-1", "7610807000016",
         "Feldschlösschen \"Original\"\n", 180, false, "r1");
     check(n > 0, "purchase encodes");
     check(field(req, "name") == "Feldschlösschen \"Original\"\n",
@@ -64,7 +64,7 @@ int main() {
   {
     const char* body =
         "{\"ok\":true,\"revision\":9,\"changed\":true,"
-        "\"products\":[{\"barcode\":\"7610807000019\",\"name\":\"Feldschlösschen\","
+        "\"products\":[{\"barcode\":\"7610807000016\",\"name\":\"Feldschlösschen\","
         "\"price_rappen\":180,\"free\":false,\"image_url\":\"https://x/y.jpg\","
         "\"active\":true},"
         "{\"barcode\":\"761\",\"name\":\"Gratisbier\",\"price_rappen\":0,"

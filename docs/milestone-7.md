@@ -99,10 +99,15 @@ control characters in a server message are stripped; `duplicate` reports success
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 1,724,860 bytes | 53,328 bytes |
+| `./tools/build.sh` (C++17), clean | PASS | 1,744,834 bytes | 61,568 bytes |
 
-Flash grew by 767 KB: TLS, the Wi-Fi stack and the 69 KB certificate bundle.
-Still 26 % of the partition.
+Flash grew by 787 KB: TLS, the Wi-Fi stack and the 69 KB certificate bundle.
+Static RAM grew by 8,240 bytes, almost all of it `backend`'s static
+`SyncResult` — a whole catalog and resident list, which has no business on a
+stack. Still 26 % of the partition.
+
+These are from a clean build. An incremental build reported lower figures and
+was wrong; delete `build/prev3/beer_terminal` before trusting a number.
 
 ## Requires the physical Tab5, and milestone 8
 

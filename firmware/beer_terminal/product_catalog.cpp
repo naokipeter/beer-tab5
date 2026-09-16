@@ -24,18 +24,19 @@ void add(const char* barcode, const char* name, int32_t rappen, bool free_item,
 
 void seed() {
   g_count = 0;
-  // Mock catalog for the prototype. Barcodes are plausible but not authoritative;
-  // real values arrive with the backend catalog in milestone 7. Two active
-  // products match the usual stock; the rest start archived so the restore flow
-  // has something to show.
-  add("7610807000019", "Feldschlösschen Original", 180, false, "", true);
-  add("7610827000024", "Appenzeller Quöllfrisch", 220, false, "", true);
-  add("7610900000038", "Calanda Bräu", 190, false, "", false);
-  add("7613100000045", "Chopfab Draft", 260, false, "", false);
-  add("7610827000055", "Appenzeller Naturperle", 240, false, "", false);
-  add("7610013000062", "Boxer Old", 170, false, "", false);
-  add("7610700000079", "Valaisanne Pale Ale", 280, false, "", false);
-  add("7613300000086", "Turbinenbräu Gassenhauer", 0, true, "", false);
+  // Mock catalog for the prototype. The barcodes are invented but carry valid
+  // EAN-13 check digits, because the backend validates them and would otherwise
+  // reject every purchase made against this seed. Real values arrive with the
+  // backend catalog. Two active products match the usual stock; the rest start
+  // archived so the restore flow has something to show.
+  add("7610807000016", "Feldschlösschen Original", 180, false, "", true);
+  add("7610827000027", "Appenzeller Quöllfrisch", 220, false, "", true);
+  add("7610900000036", "Calanda Bräu", 190, false, "", false);
+  add("7613100000042", "Chopfab Draft", 260, false, "", false);
+  add("7610827000058", "Appenzeller Naturperle", 240, false, "", false);
+  add("7610013000060", "Boxer Old", 170, false, "", false);
+  add("7610700000076", "Valaisanne Pale Ale", 280, false, "", false);
+  add("7613300000088", "Turbinenbräu Gassenhauer", 0, true, "", false);
 }
 
 void add(const char* barcode, const char* name, int32_t rappen, bool free_item,
