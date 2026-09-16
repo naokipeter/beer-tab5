@@ -43,22 +43,10 @@ applied uniformly. Stretching a bottle to a square would look worse than no phot
 ## Security
 
 `api_protocol::image_source_allowed` restricts downloads to https on
-`openfoodfacts.org` and `googleusercontent.com` — the second so a beer Open Food
-Facts has no picture for can be given one by hand from Google Photos. The backend validates the URL too, but the device decides
+`openfoodfacts.org`. The backend validates the URL too, but the device decides
 for itself what it will connect to rather than trusting a value it was handed —
 the same reasoning as the redirect check. Host-tested against suffix lookalikes,
 userinfo smuggling and plain http.
-
-## URL length
-
-`image_url` is **256 bytes**. An Open Food Facts URL fits in about 100, but a
-Google Photos link runs past 220, and the old 160-byte field truncated it into a
-URL that could only fail — silently, since a failed download just leaves the
-placeholder. Widening it changes the catalog record size, which the header
-advertises, so stored files reject themselves and the catalog reseeds.
-
-A caveat worth knowing: Google Photos links can rotate. If one stops working the
-tile falls back to the colour placeholder and serial logs the failed download.
 
 ## Sizing
 
@@ -73,7 +61,7 @@ is the full-width one shown when a single beer is in the fridge.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17), clean | PASS | 1,760,264 bytes | 87,840 bytes |
+| `./tools/build.sh` (C++17), clean | PASS | 1,760,136 bytes | 78,624 bytes |
 
 ## Requires the physical Tab5
 

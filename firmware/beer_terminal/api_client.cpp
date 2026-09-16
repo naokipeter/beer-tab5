@@ -246,11 +246,7 @@ void perform() {
       set_status(Status::Failed);
       return;
     }
-    // A photo fetch and an API call trust different hosts, so each redirect is
-    // checked against the set its own job started from rather than the union.
-    const bool allowed = g_to_file ? api_protocol::image_source_allowed(location)
-                                   : api_protocol::redirect_target_allowed(location);
-    if (!allowed) {
+    if (!api_protocol::redirect_target_allowed(location)) {
       Serial.printf("[api] refusing redirect to %.80s\n", location);
       snprintf(g_error_detail, sizeof(g_error_detail), "Weiterleitung abgelehnt");
       g_error = Error::HttpStatus;
