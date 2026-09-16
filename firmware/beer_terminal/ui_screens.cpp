@@ -189,6 +189,37 @@ void on_simulate_failure(lv_event_t* e) {
   app_state::simulate_next_failure(lv_obj_has_state(sw, LV_STATE_CHECKED));
 }
 
+// Animates an object's width; used by the dwell bar below.
+void anim_set_width(void* obj, int32_t value) {
+  lv_obj_set_width(static_cast<lv_obj_t*>(obj), value);
+}
+
+// A thin bar along the bottom edge that fills left to right over the screen's
+// dwell, so the time left to act is visible rather than guessed. The duration
+// comes from app_state rather than the constant it was set from, so the bar can
+// never disagree with the deadline it is showing. LVGL deletes an animation with
+// its object, so leaving the screen cancels it.
+void add_dwell_bar(lv_obj_t* scr, uint32_t fill_rgb) {
+  const uint32_t duration_ms = app_state::current_dwell_ms();
+  if (duration_ms == 0) return;
+  constexpr int16_t kBarH = 10;
+  lv_obj_t* track = make_panel(scr, 0, settings::screen_h - kBarH,
+                               settings::screen_w, kBarH, 0x000000);
+  lv_obj_set_style_radius(track, 0, 0);
+  lv_obj_set_style_bg_opa(track, LV_OPA_20, 0);
+
+  lv_obj_t* fill = make_panel(track, 0, 0, 0, kBarH, fill_rgb);
+  lv_obj_set_style_radius(fill, 0, 0);
+
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, fill);
+  lv_anim_set_exec_cb(&a, anim_set_width);
+  lv_anim_set_values(&a, 0, settings::screen_w);
+  lv_anim_set_duration(&a, duration_ms);
+  lv_anim_start(&a);
+}
+
 // ---- chrome -------------------------------------------------------------
 
 lv_obj_t* build_root() {
@@ -568,6 +599,8 @@ void build_success() {
   make_button(scr, "Übersicht anzeigen", left + bw + gap, by, bw, 84, 0xFFFFFF,
               settings::theme::ok, on_event_button,
               as_ud(static_cast<uintptr_t>(Event::ShowSummary)));
+
+  add_dwell_bar(scr, 0xFFFFFF);
 }
 
 void build_undoing() {
@@ -639,6 +672,7 @@ void build_summary() {
 
   build_footer_single(scr, "Zurück", Event::Cancel, settings::theme::surface_alt,
                       settings::theme::text);
+  add_dwell_bar(scr, settings::theme::accent);
 }
 
 void build_error() {

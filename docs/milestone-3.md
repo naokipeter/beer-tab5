@@ -43,6 +43,14 @@ The confirmation screen carries **Rückgängig** and **Übersicht anzeigen**.
 Ignoring both returns to the catalog on its own; the summary table also returns
 after 15 seconds, so the terminal never sits lit.
 
+A thin bar along the bottom edge fills left to right over the dwell, so the time
+left to act is visible rather than guessed. It reads its duration from
+`app_state::current_dwell_ms()` rather than the constant that deadline was set
+from, so the bar cannot drift out of step with the timeout it is showing. The
+summary screen gets the same bar in the accent colour. The reversal
+acknowledgement does not: at two seconds, with nothing left to decide, a bar
+would be noise.
+
 Undo is the whole reason the confirmation now dwells for 6 seconds rather than
 2.5: that dwell *is* the undo window, and it has to be long enough to notice a
 mis-tap and react. The reversal runs through its own UNDOING state so milestone 8
@@ -80,7 +88,7 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 906,794 bytes | 36,496 bytes |
+| `./tools/build.sh` (C++17) | PASS | 907,094 bytes | 36,504 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
@@ -148,7 +156,11 @@ On the Tab5, after uploading (see README for the port-independent upload command
    the resident and product.
 4. On that screen, press `Übersicht anzeigen`: the table lists each resident with
    a drink count and total. It returns on its own after 15 s, or on `Zurück`.
-   Ignoring both buttons returns to the catalog after 6 s.
+   Ignoring both buttons returns to the catalog after 6 s. A white bar along the
+   bottom edge should fill steadily across that whole 6 s and reach the right
+   edge exactly as the screen clears; the summary's own bar does the same over
+   15 s. If a bar completes noticeably before or after the screen changes, the
+   animation and the state deadline have drifted apart.
 5. Book another drink and press `Rückgängig`. A spinner shows briefly, then a grey
    `Rückgängig gemacht` screen, which clears after 2 s. Open the summary again:
    that resident's count and total must be back to what they were. Pressing undo

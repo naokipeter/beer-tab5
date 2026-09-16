@@ -80,6 +80,11 @@ void dispatch(Event e);
 void simulate_next_failure(bool on);
 bool failure_simulated();
 
+// Total dwell of the current state in milliseconds, or 0 when it is not timed.
+// The UI's countdown bar reads this rather than repeating the constant, so the
+// bar cannot disagree with the deadline it is showing.
+uint32_t current_dwell_ms();
+
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);
 

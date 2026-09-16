@@ -15,6 +15,8 @@ ChangeHandler g_on_change = nullptr;
 
 // Deadline for the current timed state, or 0 when the state is not timed.
 uint32_t g_deadline = 0;
+// The span that deadline was set from, so the UI can draw a matching countdown.
+uint32_t g_dwell_total = 0;
 // Set when a submission is deliberately failed, so Retry can succeed instead.
 bool g_fail_next_submit = false;
 
@@ -23,28 +25,31 @@ void enter(State next) {
   const State previous = g_state;
   g_state = next;
   g_deadline = 0;
+  g_dwell_total = 0;
 
   switch (next) {
     case State::Submitting:
-      g_deadline = millis() + settings::mock_submit_ms;
+      g_dwell_total = settings::mock_submit_ms;
       break;
     case State::Undoing:
-      g_deadline = millis() + settings::mock_submit_ms;
+      g_dwell_total = settings::mock_submit_ms;
       break;
     case State::Success:
       // An acknowledged reversal needs no decision, so it clears faster than the
       // confirmation that still offers undo.
-      g_deadline = millis() + (g_ctx.undone ? settings::undo_dwell_ms
-                                            : settings::success_dwell_ms);
+      g_dwell_total = g_ctx.undone ? settings::undo_dwell_ms
+                                   : settings::success_dwell_ms;
       break;
     case State::Summary:
       // Long enough to read the table, but it still returns on its own so the
       // terminal never sits lit in front of the fridge.
-      g_deadline = millis() + settings::summary_dwell_ms;
+      g_dwell_total = settings::summary_dwell_ms;
       break;
     default:
       break;
   }
+
+  if (g_dwell_total > 0) g_deadline = millis() + g_dwell_total;
 
   Serial.printf("[state] %s -> %s\n", state_name(previous), state_name(next));
   if (g_on_change) g_on_change(previous, next);
@@ -79,6 +84,7 @@ void begin(ChangeHandler on_change) {
 }
 
 State state() { return g_state; }
+uint32_t current_dwell_ms() { return g_dwell_total; }
 Context& context() { return g_ctx; }
 
 const char* state_name(State s) {
