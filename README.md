@@ -7,6 +7,18 @@ See [the hardware audit](docs/hardware-audit.md) for the camera blocker and
 
 ## Build
 
+### Arduino IDE
+
+Open `firmware/beer_terminal/beer_terminal.ino`. Install M5Stack board package
+3.3.9, M5Unified 0.2.22 and M5GFX 0.2.29 using the IDE's Boards/Library Managers.
+Select M5Tab5 and the connected port under Tools; enable PSRAM and USB CDC On
+Boot, select Hardware CDC and JTAG for USB Mode, and select the chip variant
+matching the device. Click Verify or Upload. Serial Monitor uses 115200 baud.
+The sketch accepts C++17 or newer, including the board package's default C++20;
+no custom language flags are needed in Arduino IDE.
+
+### Arduino CLI
+
 Tested on Apple Silicon macOS with Arduino CLI **1.1.1**, official
 **m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**.
 Application and library compilation explicitly uses GNU C++17. Core prebuilt

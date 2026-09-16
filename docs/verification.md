@@ -11,7 +11,7 @@ not yet validated in this milestone.
 | Official M5GFX `Basic/TextLogScroll` | PASS; 472,832 bytes flash, 25,804 bytes static RAM |
 | Official M5Unified `Basic/Touch/DragDrop` | PASS; 536,334 bytes flash, 27,728 bytes static RAM |
 | `./tools/build.sh` | PASS; 535,756 bytes flash, 27,624 bytes static RAM |
-| C++17 | PASS; sketch compile-time assertion requires `__cplusplus == 201703L` |
+| C++17 | PASS; CLI explicitly selects GNU C++17; sketch accepts C++17 or newer for IDE compatibility |
 | Shell scripts / ignore rules | PASS; all scripts pass `bash -n`; secrets and generated directories are ignored |
 | Official Tab5 Arduino camera | BLOCKED; missing official Arduino example and video/sensor components; not falsely counted as a pass |
 | Upload / boot / touch / camera / networking / battery | NOT RUN; physical observations required |
@@ -40,3 +40,12 @@ Temporary logs may be cleaned by the OS; this document records the outcomes.
 
 Next gate: follow README's physical verification and confirm before milestone 2.
 No upload or device firmware replacement was attempted.
+
+## Arduino IDE compatibility fix
+
+The sketch now requires C++17 or newer instead of exactly C++17. Rebuilt
+successfully both with `tools/build.sh` (C++17) and with the same board/options
+using the unmodified board compiler defaults (C++20), matching Arduino IDE.
+The latter was verified through Arduino CLI without any build-property override;
+no GUI upload was performed. Logs: `/private/tmp/tab5-cpp17-fix-build.log` and
+`/private/tmp/tab5-ide-default-build.log`.

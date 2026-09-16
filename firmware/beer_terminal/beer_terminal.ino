@@ -5,7 +5,7 @@
 #if !defined(ARDUINO_M5STACK_TAB5) || !defined(CONFIG_IDF_TARGET_ESP32P4)
 #error "Select the official M5Stack M5Tab5 board."
 #endif
-static_assert(__cplusplus == 201703L, "Milestone 1 build must use the pinned C++17 setting");
+static_assert(__cplusplus >= 201703L, "C++17 or newer required");
 
 // Milestone 1: boot/build smoke test only. No product workflow or sleep yet.
 void setup() {
