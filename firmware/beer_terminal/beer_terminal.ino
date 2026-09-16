@@ -16,6 +16,7 @@
 #include "purchase_log.h"
 #include "resident_directory.h"
 #include "settings.h"
+#include "transaction_queue.h"
 #include "wifi_manager.h"
 #include "ui_screens.h"
 
@@ -35,6 +36,7 @@ void setup() {
   device_storage::begin();
   product_catalog::begin();
   resident_directory::begin();
+  transaction_queue::begin();
   purchase_log::begin();
 
   if (!display_ui::begin()) {
@@ -70,5 +72,6 @@ void loop() {
   // Persist off the UI event path, so a flash write never delays a touch.
   product_catalog::flush();
   resident_directory::flush();
+  transaction_queue::flush();
   delay(5);
 }

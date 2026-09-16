@@ -11,7 +11,18 @@
 // demonstrates the whole flow.
 namespace backend {
 
-enum class Result : uint8_t { Idle, Pending, Success, Failure };
+enum class Result : uint8_t {
+  Idle,
+  Pending,
+  Success,
+  // Never reached the backend. The transaction stays queued and will go out on
+  // its own, so the user is told it is booked, not that it failed.
+  Unreachable,
+  // The backend answered and refused — an unknown person, an invalid barcode.
+  // Retrying unchanged would fail identically, so the entry is dropped and the
+  // user sees the reason.
+  Rejected,
+};
 
 void begin();
 
@@ -22,10 +33,9 @@ void update(uint32_t now_ms);
 // True when an endpoint and token are compiled in and https.
 bool configured();
 
-bool submit_purchase(const char* transaction_id, const char* barcode,
-                     const char* product_name, int32_t price_rappen, bool free_item,
-                     const char* resident_id);
-bool void_purchase(const char* transaction_id);
+// Tries to send the head of the transaction queue now. Returns false when it
+// could not be started; the entry stays queued either way, so nothing is lost.
+bool send_queued_now();
 
 // Asks for a catalog and resident refresh. Results are applied by update().
 bool request_sync();
@@ -42,5 +52,6 @@ void clear();
 // For the admin screen.
 uint32_t last_sync_ms();
 bool sync_in_flight();
+bool busy();
 
 }  // namespace backend

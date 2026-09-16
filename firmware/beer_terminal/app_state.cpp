@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "backend.h"
 #include "product_catalog.h"
+#include "transaction_queue.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
 
@@ -25,6 +26,10 @@ bool g_fail_next_submit = false;
 // without secrets.h fully demonstrable.
 bool g_simulated = false;
 
+// Defined below; enter() runs before them.
+bool enqueue_purchase();
+bool enqueue_undo();
+
 void enter(State next) {
   if (next == g_state) return;
   const State previous = g_state;
@@ -33,19 +38,12 @@ void enter(State next) {
   g_dwell_total = 0;
 
   switch (next) {
-    case State::Submitting: {
-      const resident_directory::Entry* r =
-          g_ctx.resident_index >= 0
-              ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
-              : nullptr;
-      g_simulated = !backend::submit_purchase(
-          g_ctx.transaction_id, g_ctx.barcode, g_ctx.product_name, g_ctx.price_rappen,
-          g_ctx.free_item, r ? r->id : "");
+    case State::Submitting:
+      g_simulated = !enqueue_purchase();
       g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
       break;
-    }
     case State::Undoing:
-      g_simulated = !backend::void_purchase(g_ctx.transaction_id);
+      g_simulated = !enqueue_undo();
       g_dwell_total = g_simulated ? settings::mock_submit_ms : 0;
       break;
     case State::Success:
@@ -76,6 +74,7 @@ void reset_context() {
   g_ctx.archive_storage_index = -1;
   g_ctx.undone = false;
   g_ctx.undo_in_flight = false;
+  g_ctx.deferred = false;
 }
 
 // The local tally mirrors what the backend holds, so the summary works offline.
@@ -95,6 +94,59 @@ void reverse_locally() {
   if (r) purchase_log::unrecord(r->id, g_ctx.price_rappen, g_ctx.free_item);
   g_ctx.undo_in_flight = false;
   g_ctx.undone = true;
+}
+
+// Writes the transaction to flash before anything is sent, so a power cut
+// between the tap and the acknowledgement cannot lose a drink. Returns false
+// only when there is no backend at all, or the queue is full.
+bool enqueue_purchase() {
+  if (!backend::configured()) return false;
+  if (transaction_queue::full()) {
+    snprintf(g_ctx.message, sizeof(g_ctx.message),
+             "Warteschlange voll - Terminal ans WLAN bringen");
+    return false;
+  }
+  const resident_directory::Entry* r =
+      g_ctx.resident_index >= 0
+          ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+          : nullptr;
+
+  transaction_queue::Entry e = {};
+  snprintf(e.transaction_id, sizeof(e.transaction_id), "%s", g_ctx.transaction_id);
+  snprintf(e.barcode, sizeof(e.barcode), "%s", g_ctx.barcode);
+  snprintf(e.product_name, sizeof(e.product_name), "%s", g_ctx.product_name);
+  snprintf(e.resident_id, sizeof(e.resident_id), "%s", r ? r->id : "");
+  snprintf(e.resident_name, sizeof(e.resident_name), "%s", r ? r->name : "");
+  e.price_rappen = g_ctx.price_rappen;
+  e.free_item = g_ctx.free_item;
+  e.kind = transaction_queue::Kind::Purchase;
+
+  if (!transaction_queue::push(e)) return false;
+  // Durable before the first attempt, not after it.
+  transaction_queue::flush();
+  backend::send_queued_now();
+  return true;
+}
+
+// Undoing a purchase that never left the device just removes it. Nothing was
+// recorded, so there is nothing to reverse and no round trip to make.
+bool enqueue_undo() {
+  if (!backend::configured()) return false;
+  if (transaction_queue::remove_purchase(g_ctx.transaction_id)) {
+    transaction_queue::flush();
+    Serial.printf("[undo] dropped queued transaction %s\n", g_ctx.transaction_id);
+    return false;  // resolves immediately through the simulated path
+  }
+  if (transaction_queue::full()) return false;
+
+  transaction_queue::Entry e = {};
+  snprintf(e.transaction_id, sizeof(e.transaction_id), "%s", g_ctx.transaction_id);
+  snprintf(e.product_name, sizeof(e.product_name), "%s", g_ctx.product_name);
+  e.kind = transaction_queue::Kind::Void;
+  if (!transaction_queue::push(e)) return false;
+  transaction_queue::flush();
+  backend::send_queued_now();
+  return true;
 }
 
 void make_transaction_id() {
@@ -275,7 +327,11 @@ void update(uint32_t now_ms) {
   if (!g_simulated && (g_state == State::Submitting || g_state == State::Undoing)) {
     const backend::Result r = backend::result();
     if (r == backend::Result::Pending) return;
-    if (r == backend::Result::Success) {
+    // Unreachable is not a failure the user has to act on: the transaction is
+    // on flash and goes out by itself. Only an outright rejection is an error.
+    const bool ok = r == backend::Result::Success || r == backend::Result::Unreachable;
+    g_ctx.deferred = r == backend::Result::Unreachable;
+    if (ok) {
       if (g_state == State::Submitting) {
         record_locally();
         dispatch(Event::SubmitSucceeded);
@@ -285,7 +341,7 @@ void update(uint32_t now_ms) {
       }
     } else {
       snprintf(g_ctx.message, sizeof(g_ctx.message), "%s",
-               backend::error()[0] ? backend::error() : "Server nicht erreichbar");
+               backend::error()[0] ? backend::error() : "Vom Server abgelehnt");
       dispatch(g_state == State::Submitting ? Event::SubmitFailed : Event::UndoFailed);
     }
     backend::clear();

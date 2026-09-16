@@ -12,6 +12,7 @@
 #include "resident_directory.h"
 #include "wifi_manager.h"
 #include "settings.h"
+#include "transaction_queue.h"
 #include "ui_fonts.h"
 #include "ui_keyboard.h"
 
@@ -586,9 +587,18 @@ void build_success() {
 
   lv_obj_t* big = make_label(scr, ctx.undone ? "Rückgängig gemacht" : "Gebucht",
                              0xFFFFFF, &font_de_48);
-  lv_obj_align(big, LV_ALIGN_CENTER, 0, ctx.undone ? -40 : -90);
+  lv_obj_align(big, LV_ALIGN_CENTER, 0, ctx.undone ? -40 : -110);
   lv_obj_t* l = make_label(scr, line, 0xFFFFFF, &font_de_32);
-  lv_obj_align(l, LV_ALIGN_CENTER, 0, ctx.undone ? 30 : -20);
+  lv_obj_align(l, LV_ALIGN_CENTER, 0, ctx.undone ? 30 : -45);
+
+  // Booked either way: it is on flash. Saying so is more honest than a bare
+  // confirmation, and stops anyone re-tapping because they think it was lost.
+  if (!ctx.undone && ctx.deferred) {
+    lv_obj_t* note = make_label(scr, "Gespeichert - wird nachgetragen, sobald WLAN da ist",
+                                0xFFFFFF, &font_de_20);
+    lv_obj_set_style_text_opa(note, LV_OPA_80, 0);
+    lv_obj_align(note, LV_ALIGN_CENTER, 0, 0);
+  }
 
   // A reversal is already final, so it offers nothing further and clears itself.
   if (ctx.undone) return;
@@ -764,6 +774,19 @@ void build_admin() {
     snprintf(net, sizeof(net), "WLAN %s%s", wifi_manager::status_text(),
              backend::sync_in_flight() ? ", Sync wartet" : "");
   }
+  char q[96];
+  if (transaction_queue::empty()) {
+    snprintf(q, sizeof(q), "Warteschlange leer");
+  } else {
+    snprintf(q, sizeof(q), "%u Buchung(en) warten auf den Server",
+             static_cast<unsigned>(transaction_queue::count()));
+  }
+  lv_obj_t* ql = make_label(scr, q,
+                            transaction_queue::empty() ? settings::theme::text_muted
+                                                       : settings::theme::accent,
+                            &font_de_20);
+  lv_obj_set_pos(ql, settings::grid_margin, y + 130);
+
   lv_obj_t* nl2 = make_label(scr, net,
                              backend::configured() && wifi_manager::online()
                                  ? settings::theme::text_muted

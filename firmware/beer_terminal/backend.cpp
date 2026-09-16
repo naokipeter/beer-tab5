@@ -7,6 +7,7 @@
 #include "product_catalog.h"
 #include "resident_directory.h"
 #include "settings.h"
+#include "transaction_queue.h"
 #include "wifi_manager.h"
 
 namespace backend {
@@ -28,6 +29,9 @@ char g_error[64] = {};
 bool g_duplicate = false;
 
 uint32_t g_last_sync = 0;
+// Backoff between queue drain attempts, so an outage does not spin the radio.
+uint32_t g_retry_after = 0;
+uint8_t g_send_failures = 0;
 
 // Static: these are kilobytes and the loop task's stack is not the place for them.
 char g_request[api_protocol::kMaxRequestBytes];
@@ -61,6 +65,14 @@ bool start(Op op, size_t len, uint32_t now) {
   }
   wifi_manager::request_online();
   return true;
+}
+
+// Exponential backoff, capped, so a long outage costs a request a minute rather
+// than one per loop.
+void note_send_failure(uint32_t now_ms) {
+  if (g_send_failures < 6) ++g_send_failures;
+  const uint32_t wait = 2000u << g_send_failures;
+  g_retry_after = now_ms + (wait > 120000u ? 120000u : wait);
 }
 
 void apply_sync() {
@@ -118,28 +130,39 @@ bool request_sync() {
   return start(Op::Sync, len, millis());
 }
 
-bool submit_purchase(const char* transaction_id, const char* barcode,
-                     const char* product_name, int32_t price_rappen, bool free_item,
-                     const char* resident_id) {
+bool send_queued_now() {
   if (!configured() || g_op != Op::None) return false;
-  const size_t len = api_protocol::build_record_purchase(
-      g_request, sizeof(g_request), config::device_token, settings::device_id,
-      transaction_id, barcode, product_name, price_rappen, free_item, resident_id);
-  return start(Op::Purchase, len, millis());
+  const transaction_queue::Entry* e = transaction_queue::head();
+  if (!e) return false;
+
+  size_t len;
+  Op op;
+  if (e->kind == transaction_queue::Kind::Void) {
+    len = api_protocol::build_void_purchase(g_request, sizeof(g_request),
+                                            config::device_token, settings::device_id,
+                                            e->transaction_id);
+    op = Op::Void;
+  } else {
+    len = api_protocol::build_record_purchase(
+        g_request, sizeof(g_request), config::device_token, settings::device_id,
+        e->transaction_id, e->barcode, e->product_name, e->price_rappen, e->free_item,
+        e->resident_id);
+    op = Op::Purchase;
+  }
+  return start(op, len, millis());
 }
 
-bool void_purchase(const char* transaction_id) {
-  if (!configured() || g_op != Op::None) return false;
-  const size_t len = api_protocol::build_void_purchase(
-      g_request, sizeof(g_request), config::device_token, settings::device_id,
-      transaction_id);
-  return start(Op::Void, len, millis());
-}
+bool busy() { return g_op != Op::None; }
 
 void update(uint32_t now_ms) {
   if (!configured()) return;
 
   if (g_op == Op::None) {
+    // Drain before syncing: a recorded drink matters more than a fresh price.
+    if (!transaction_queue::empty()) {
+      if (static_cast<int32_t>(now_ms - g_retry_after) >= 0) send_queued_now();
+      return;
+    }
     // Periodic refresh. Milestone 10 replaces this timer with a sync on wake.
     if (static_cast<int32_t>(now_ms - (g_last_sync + settings::sync_interval_ms)) >= 0) {
       request_sync();
@@ -156,13 +179,15 @@ void update(uint32_t now_ms) {
       } else if (api_client::error() != api_client::Error::Busy) {
         Serial.printf("[backend] cannot send: %s\n", api_client::error_text());
         const bool was_sync = g_op == Op::Sync;
-        finish(Result::Failure, api_client::error_text());
+        note_send_failure(now_ms);
+        finish(Result::Unreachable, api_client::error_text());
         if (was_sync) g_last_sync = now_ms;
       }
     } else if (static_cast<int32_t>(now_ms - g_deadline) >= 0) {
       Serial.println("[backend] gave up waiting for the radio");
       const bool was_sync = g_op == Op::Sync;
-      finish(Result::Failure, "Kein WLAN");
+      note_send_failure(now_ms);
+      finish(Result::Unreachable, "Kein WLAN");
       if (was_sync) g_last_sync = now_ms;
     }
     return;
@@ -174,7 +199,10 @@ void update(uint32_t now_ms) {
   if (s == api_client::Status::Failed) {
     Serial.printf("[backend] request failed: %s\n", api_client::error_text());
     const bool was_sync = g_op == Op::Sync;
-    finish(Result::Failure, api_client::error_text());
+    // The entry stays queued: not reaching the server says nothing about
+    // whether it should be recorded.
+    note_send_failure(now_ms);
+    finish(Result::Unreachable, api_client::error_text());
     if (was_sync) g_last_sync = now_ms;
     return;
   }
@@ -196,12 +224,21 @@ void update(uint32_t now_ms) {
   if (outcome == api_protocol::Outcome::Ok) {
     g_duplicate = duplicate;
     if (duplicate) Serial.println("[backend] already recorded; treating as success");
+    transaction_queue::pop();
+    g_send_failures = 0;
     finish(Result::Success, "");
+  } else if (outcome == api_protocol::Outcome::Rejected) {
+    // The backend understood and refused. Retrying the same bytes would be
+    // refused the same way, so stop carrying it.
+    Serial.printf("[backend] rejected: %s\n", err);
+    transaction_queue::pop();
+    finish(Result::Rejected, err[0] ? err : "Vom Server abgelehnt");
   } else {
     Serial.printf("[backend] unreadable answer (%u bytes): %.160s\n",
                   static_cast<unsigned>(api_client::response_len()),
                   api_client::response());
-    finish(Result::Failure, err[0] ? err : "Antwort unlesbar");
+    note_send_failure(now_ms);
+    finish(Result::Unreachable, err[0] ? err : "Antwort unlesbar");
   }
 }
 

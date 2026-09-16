@@ -8,6 +8,7 @@ namespace {
 // else that might end up on the volume.
 constexpr uint32_t kMagicCatalog = 0x31545242u;
 constexpr uint32_t kMagicResidents = 0x31545252u;
+constexpr uint32_t kMagicQueue = 0x31545451u;  // 'Q','T','T','1'
 
 // magic(4) version(2) record_size(2) revision(4) count(2) reserved(2) crc(4)
 constexpr size_t kCrcOffset = 16;
@@ -20,11 +21,15 @@ constexpr size_t kCatalogRecord = kBarcode + kName + 4 + 1 + kImageUrl;  // 219
 constexpr size_t kResidentId = 12;
 constexpr size_t kResidentName = 24;
 constexpr size_t kResidentRecord = kResidentId + kResidentName;  // 36
+constexpr size_t kTxnId = 24;
+constexpr size_t kQueueRecord =
+    kTxnId + kBarcode + kName + kResidentId + kResidentName + 4 + 1 + 1;  // 120
 
 // The header advertises these sizes so a build with different field widths
 // rejects another build's files; keep the public constants in step.
 static_assert(kCatalogRecord == kCatalogRecordBytes, "catalog record size drifted");
 static_assert(kResidentRecord == kResidentRecordBytes, "resident record size drifted");
+static_assert(kQueueRecord == kQueueRecordBytes, "queue record size drifted");
 
 constexpr uint8_t kFlagFree = 0x01;
 constexpr uint8_t kFlagActive = 0x02;
@@ -118,6 +123,74 @@ size_t max_catalog_bytes() {
 }
 size_t max_residents_bytes() {
   return kHeaderBytes + static_cast<size_t>(settings::max_residents) * kResidentRecord;
+}
+size_t max_queue_bytes() {
+  return kHeaderBytes +
+         static_cast<size_t>(settings::max_queued_transactions) * kQueueRecord;
+}
+
+size_t encode_queue(const transaction_queue::Entry* entries, uint8_t count,
+                    uint8_t* out, size_t capacity) {
+  if (!entries || !out) return 0;
+  const size_t len = kHeaderBytes + static_cast<size_t>(count) * kQueueRecord;
+  if (capacity < len) return 0;
+
+  put_u32(out + 0, kMagicQueue);
+  put_u16(out + 4, kFormatVersion);
+  put_u16(out + 6, static_cast<uint16_t>(kQueueRecord));
+  put_u32(out + 8, 0);
+  put_u16(out + 12, count);
+  put_u16(out + 14, 0);
+
+  uint8_t* p = out + kHeaderBytes;
+  for (uint8_t i = 0; i < count; ++i) {
+    const transaction_queue::Entry& s = entries[i];
+    put_text(p, kTxnId, s.transaction_id);
+    put_text(p + kTxnId, kBarcode, s.barcode);
+    put_text(p + kTxnId + kBarcode, kName, s.product_name);
+    put_text(p + kTxnId + kBarcode + kName, kResidentId, s.resident_id);
+    put_text(p + kTxnId + kBarcode + kName + kResidentId, kResidentName,
+             s.resident_name);
+    const size_t tail = kTxnId + kBarcode + kName + kResidentId + kResidentName;
+    put_u32(p + tail, static_cast<uint32_t>(s.price_rappen));
+    p[tail + 4] = s.free_item ? 1 : 0;
+    p[tail + 5] = static_cast<uint8_t>(s.kind);
+    p += kQueueRecord;
+  }
+  finalise(out, len);
+  return len;
+}
+
+bool decode_queue(const uint8_t* in, size_t len, transaction_queue::Entry* entries,
+                  uint8_t capacity_items, uint8_t* out_count) {
+  if (!in || !entries || !out_count) return false;
+  uint16_t count = 0;
+  if (!check(in, len, kMagicQueue, static_cast<uint16_t>(kQueueRecord), capacity_items,
+             &count, nullptr, nullptr)) {
+    return false;
+  }
+  const uint8_t* p = in + kHeaderBytes;
+  for (uint16_t i = 0; i < count; ++i) {
+    transaction_queue::Entry& d = entries[i];
+    get_text(d.transaction_id, sizeof(d.transaction_id), p, kTxnId);
+    get_text(d.barcode, sizeof(d.barcode), p + kTxnId, kBarcode);
+    get_text(d.product_name, sizeof(d.product_name), p + kTxnId + kBarcode, kName);
+    get_text(d.resident_id, sizeof(d.resident_id), p + kTxnId + kBarcode + kName,
+             kResidentId);
+    get_text(d.resident_name, sizeof(d.resident_name),
+             p + kTxnId + kBarcode + kName + kResidentId, kResidentName);
+    const size_t tail = kTxnId + kBarcode + kName + kResidentId + kResidentName;
+    d.price_rappen = static_cast<int32_t>(get_u32(p + tail));
+    d.free_item = p[tail + 4] != 0;
+    // Anything other than the void marker is a purchase: a corrupted byte must
+    // not turn a drink into a reversal.
+    d.kind = p[tail + 5] == static_cast<uint8_t>(transaction_queue::Kind::Void)
+                 ? transaction_queue::Kind::Void
+                 : transaction_queue::Kind::Purchase;
+    p += kQueueRecord;
+  }
+  *out_count = static_cast<uint8_t>(count);
+  return true;
 }
 
 size_t encode_catalog(const product_catalog::Product* items, uint8_t count,

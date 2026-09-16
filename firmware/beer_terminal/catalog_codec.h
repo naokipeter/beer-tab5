@@ -4,6 +4,7 @@
 #include "product_catalog.h"
 #include "settings.h"
 #include "resident_directory.h"
+#include "transaction_queue.h"
 
 // Serialisation for everything the device keeps across a reboot. Deliberately
 // free of Arduino and LittleFS so the format can be exercised on the host; the
@@ -23,13 +24,18 @@ inline constexpr uint16_t kFormatVersion = 1;
 inline constexpr size_t kHeaderBytes = 20;
 inline constexpr size_t kCatalogRecordBytes = 219;
 inline constexpr size_t kResidentRecordBytes = 36;
+inline constexpr size_t kQueueRecordBytes = 120;
 inline constexpr size_t kMaxCatalogBytes =
     kHeaderBytes + static_cast<size_t>(settings::max_products) * kCatalogRecordBytes;
 inline constexpr size_t kMaxResidentsBytes =
     kHeaderBytes + static_cast<size_t>(settings::max_residents) * kResidentRecordBytes;
+inline constexpr size_t kMaxQueueBytes =
+    kHeaderBytes +
+    static_cast<size_t>(settings::max_queued_transactions) * kQueueRecordBytes;
 
 size_t max_catalog_bytes();
 size_t max_residents_bytes();
+size_t max_queue_bytes();
 
 // Return the number of bytes written, or 0 if `capacity` is too small.
 // `seed_generation` records which compiled-in seed the data descends from, so a
@@ -49,6 +55,11 @@ bool decode_catalog(const uint8_t* in, size_t len, product_catalog::Product* ite
                     uint16_t* out_seed_generation);
 bool decode_residents(const uint8_t* in, size_t len, resident_directory::Entry* entries,
                       uint8_t capacity_items, uint8_t* out_count);
+
+size_t encode_queue(const transaction_queue::Entry* entries, uint8_t count,
+                    uint8_t* out, size_t capacity);
+bool decode_queue(const uint8_t* in, size_t len, transaction_queue::Entry* entries,
+                  uint8_t capacity_items, uint8_t* out_count);
 
 // Exposed for the host test.
 uint32_t crc32(const uint8_t* data, size_t len);

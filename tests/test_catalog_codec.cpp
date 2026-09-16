@@ -184,6 +184,73 @@ int main() {
           "a residents blob is not accepted as a catalog");
   }
 
+  std::printf("\ntransaction queue\n");
+  {
+    transaction_queue::Entry q[3] = {};
+    std::snprintf(q[0].transaction_id, sizeof(q[0].transaction_id), "fridge-01-abc-1");
+    std::snprintf(q[0].barcode, sizeof(q[0].barcode), "7610807000016");
+    std::snprintf(q[0].product_name, sizeof(q[0].product_name), "Feldschlösschen");
+    std::snprintf(q[0].resident_id, sizeof(q[0].resident_id), "r1");
+    std::snprintf(q[0].resident_name, sizeof(q[0].resident_name), "Jörg");
+    q[0].price_rappen = 180;
+    q[0].free_item = false;
+    q[0].kind = transaction_queue::Kind::Purchase;
+
+    std::snprintf(q[1].transaction_id, sizeof(q[1].transaction_id), "fridge-01-abc-2");
+    std::snprintf(q[1].product_name, sizeof(q[1].product_name), "Gratisbier");
+    q[1].price_rappen = 0;
+    q[1].free_item = true;
+    q[1].kind = transaction_queue::Kind::Purchase;
+
+    std::snprintf(q[2].transaction_id, sizeof(q[2].transaction_id), "fridge-01-abc-3");
+    q[2].kind = transaction_queue::Kind::Void;
+
+    std::vector<uint8_t> qb(catalog_codec::max_queue_bytes());
+    const size_t n = catalog_codec::encode_queue(q, 3, qb.data(), qb.size());
+    transaction_queue::Entry back[settings::max_queued_transactions] = {};
+    uint8_t qc = 0;
+    check(n > 0 && catalog_codec::decode_queue(qb.data(), n, back,
+                                               settings::max_queued_transactions, &qc),
+          "the queue round trips");
+    check(qc == 3, "every entry survives");
+    check(std::strcmp(back[0].transaction_id, "fridge-01-abc-1") == 0 &&
+              back[0].price_rappen == 180 && !back[0].free_item,
+          "the transaction id and price survive, which is what makes a retry safe");
+    check(std::strcmp(back[0].resident_name, "Jörg") == 0, "resident names survive");
+    check(back[1].free_item && back[1].price_rappen == 0, "a free drink survives");
+    check(back[2].kind == transaction_queue::Kind::Void, "a reversal stays a reversal");
+    check(back[0].kind == transaction_queue::Kind::Purchase,
+          "a purchase stays a purchase");
+
+    // Order is the whole point of a queue: retries must not reshuffle drinks.
+    check(std::strcmp(back[1].transaction_id, "fridge-01-abc-2") == 0 &&
+              std::strcmp(back[2].transaction_id, "fridge-01-abc-3") == 0,
+          "order is preserved");
+
+    std::vector<uint8_t> bad = qb;
+    bad[n / 2] ^= 0x01;
+    uint8_t c2 = 42;
+    check(!catalog_codec::decode_queue(bad.data(), n, back,
+                                       settings::max_queued_transactions, &c2) &&
+              c2 == 42,
+          "a corrupted queue is rejected whole, not partly replayed");
+
+    uint8_t c3 = 0;
+    check(!catalog_codec::decode_queue(qb.data(), n, back, 1, &c3),
+          "a queue longer than this build can hold is rejected");
+    check(!catalog_codec::decode_catalog(qb.data(), n, out, settings::max_products, &c3,
+                                         nullptr, nullptr),
+          "a queue blob is not accepted as a catalog");
+
+    // An empty queue is the normal steady state and must round trip.
+    const size_t e = catalog_codec::encode_queue(q, 0, qb.data(), qb.size());
+    uint8_t c4 = 9;
+    check(e > 0 && catalog_codec::decode_queue(qb.data(), e, back,
+                                               settings::max_queued_transactions, &c4) &&
+              c4 == 0,
+          "an empty queue round trips");
+  }
+
   std::printf(g_failures ? "\n%d failure(s)\n" : "\nall checks passed\n", g_failures);
   return g_failures ? 1 : 0;
 }

@@ -60,6 +60,9 @@ struct Context {
   char transaction_id[24];
   char message[64];       // error detail shown in the UI
   bool undone;            // the confirmation is acknowledging a reversal
+  // The purchase is stored and will be sent, but has not reached the backend
+  // yet. The confirmation says so rather than claiming a clean booking.
+  bool deferred;
   // Which operation ERROR should retry. Retrying must never turn a failed undo
   // back into a second submission.
   bool undo_in_flight;

@@ -61,6 +61,12 @@ inline constexpr uint32_t ok = 0x63991F;
 inline constexpr uint32_t danger = 0xC0392B;
 }  // namespace theme
 
+// Transactions that may wait for the backend. Sized for a long outage: seven
+// people would have to drink around nine each before it fills. When it does
+// fill the terminal refuses further purchases rather than discarding one, since
+// every entry is a drink somebody was already told was booked.
+inline constexpr uint8_t max_queued_transactions = 64;
+
 // How often the catalog is refreshed while the device is awake. Milestone 10
 // replaces this timer with a sync on wake.
 inline constexpr uint32_t sync_interval_ms = 10UL * 60UL * 1000UL;
