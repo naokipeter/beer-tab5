@@ -3,6 +3,8 @@
 #include <string.h>
 #include <Arduino.h>
 #include "product_catalog.h"
+#include "purchase_log.h"
+#include "resident_directory.h"
 
 namespace app_state {
 namespace {
@@ -29,6 +31,11 @@ void enter(State next) {
     case State::Success:
       g_deadline = millis() + settings::success_dwell_ms;
       break;
+    case State::Summary:
+      // Long enough to read the table, but it still returns on its own so the
+      // terminal never sits lit in front of the fridge.
+      g_deadline = millis() + settings::summary_dwell_ms;
+      break;
     default:
       break;
   }
@@ -41,6 +48,7 @@ void reset_context() {
   g_ctx = Context{};
   g_ctx.product_index = -1;
   g_ctx.resident_index = -1;
+  g_ctx.archive_storage_index = -1;
 }
 
 void make_transaction_id() {
@@ -70,6 +78,9 @@ const char* state_name(State s) {
     case State::Sleeping:         return "SLEEPING";
     case State::Waking:           return "WAKING";
     case State::SelectingProduct: return "SELECTING_PRODUCT";
+    case State::SelectingArchived: return "SELECTING_ARCHIVED";
+    case State::ConfirmArchive:   return "CONFIRM_ARCHIVE";
+    case State::Summary:          return "SUMMARY";
     case State::LookingUp:        return "LOOKING_UP";
     case State::ProductFound:     return "PRODUCT_FOUND";
     case State::NewProduct:       return "NEW_PRODUCT";
@@ -82,10 +93,10 @@ const char* state_name(State s) {
   return "?";
 }
 
-void select_product(uint8_t catalog_index) {
-  const product_catalog::Product* p = product_catalog::at(catalog_index);
+void select_product(uint8_t active_index) {
+  const product_catalog::Product* p = product_catalog::active_at(active_index);
   if (!p) return;
-  g_ctx.product_index = static_cast<int8_t>(catalog_index);
+  g_ctx.product_index = product_catalog::storage_index_of_active(active_index);
   snprintf(g_ctx.product_name, sizeof(g_ctx.product_name), "%s", p->name);
   snprintf(g_ctx.barcode, sizeof(g_ctx.barcode), "%s", p->barcode);
   g_ctx.price_rappen = p->price_rappen;
@@ -115,7 +126,12 @@ void dispatch(Event e) {
 
     case State::SelectingProduct:
       if (e == Event::ProductSelected)      enter(State::SelectingUser);
-      else if (e == Event::NotListed)       enter(State::NewProduct);
+      else if (e == Event::NotListed) {
+        // Offer the archived beers first; only fall through to the form when
+        // there is nothing to restore.
+        enter(product_catalog::archived_count() > 0 ? State::SelectingArchived
+                                                    : State::NewProduct);
+      }
       else if (e == Event::AdminRequested)  enter(State::Admin);
       else if (e == Event::Sleep)           enter(State::Sleeping);
       break;
@@ -131,6 +147,14 @@ void dispatch(Event e) {
       else if (e == Event::Cancel)     enter(State::SelectingProduct);
       break;
 
+    case State::SelectingArchived:
+      // Restoring is offered before the form because a returning beer is far
+      // more common than a genuinely new one.
+      if (e == Event::ProductRestored)      enter(State::SelectingProduct);
+      else if (e == Event::CreateNewProduct) enter(State::NewProduct);
+      else if (e == Event::Cancel)          { reset_context(); enter(State::SelectingProduct); }
+      break;
+
     case State::NewProduct:
       if (e == Event::NewProductReady) enter(State::SelectingUser);
       else if (e == Event::Cancel)     { reset_context(); enter(State::SelectingProduct); }
@@ -138,7 +162,21 @@ void dispatch(Event e) {
 
     case State::SelectingUser:
       if (e == Event::ResidentSelected) { make_transaction_id(); enter(State::Submitting); }
-      else if (e == Event::Cancel)      { reset_context(); enter(State::SelectingProduct); }
+      else if (e == Event::ArchiveRequested) {
+        g_ctx.archive_storage_index = g_ctx.product_index;
+        enter(State::ConfirmArchive);
+      } else if (e == Event::Cancel)    { reset_context(); enter(State::SelectingProduct); }
+      break;
+
+    case State::ConfirmArchive:
+      if (e == Event::ArchiveConfirmed) {
+        product_catalog::archive(g_ctx.archive_storage_index);
+        reset_context();
+        enter(State::SelectingProduct);
+      } else if (e == Event::Cancel) {
+        g_ctx.archive_storage_index = -1;
+        enter(State::SelectingUser);
+      }
       break;
 
     case State::Submitting:
@@ -147,6 +185,14 @@ void dispatch(Event e) {
       break;
 
     case State::Success:
+      if (e == Event::ShowSummary) enter(State::Summary);
+      else if (e == Event::Dwell || e == Event::Cancel) {
+        reset_context();
+        enter(State::SelectingProduct);
+      }
+      break;
+
+    case State::Summary:
       if (e == Event::Dwell || e == Event::Cancel) {
         reset_context();
         enter(State::SelectingProduct);
@@ -177,10 +223,18 @@ void update(uint32_t now_ms) {
         snprintf(g_ctx.message, sizeof(g_ctx.message), "Keine Verbindung zum Server");
         dispatch(Event::SubmitFailed);
       } else {
+        const resident_directory::Entry* r =
+            g_ctx.resident_index >= 0
+                ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+                : nullptr;
+        if (r) {
+          purchase_log::record(r->id, r->name, g_ctx.price_rappen, g_ctx.free_item);
+        }
         dispatch(Event::SubmitSucceeded);
       }
       break;
     case State::Success:
+    case State::Summary:
       dispatch(Event::Dwell);
       break;
     default:

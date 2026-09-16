@@ -18,9 +18,17 @@ inline constexpr int16_t header_h = 64;
 inline constexpr int16_t footer_h = 72;
 inline constexpr int16_t grid_margin = 16;
 inline constexpr int16_t grid_gap = 16;
+// Height of the "Wer trinkt?" prompt line above the resident grid.
+inline constexpr int16_t prompt_h = 28;
 
-// The fridge never holds more than this many types, so the grid never pages.
-inline constexpr uint8_t max_products = 8;
+// The fridge never holds more than this many types on display, so the grid
+// never pages. Archiving is how you make room for a new beer.
+inline constexpr uint8_t max_active_products = 8;
+// Total storage including archived products, which accumulate over time.
+inline constexpr uint8_t max_products = 32;
+// Upper bound on residents the backend may supply. The selection screen shows
+// them plus one archive button, so this also bounds that grid.
+inline constexpr uint8_t max_residents = 11;
 
 // A tile wider than this width:height ratio puts the photo beside the text
 // instead of above it. Scaled by 100 so the layout unit needs no floating point.
@@ -31,12 +39,15 @@ struct Resident {
   const char* name;
 };
 
-// Replace with the real household before deploying the user-selection screen.
-inline constexpr Resident residents[] = {
-  {"r1", "Naoki"},  {"r2", "Lena"},   {"r3", "Tobias"},
-  {"r4", "Miriam"}, {"r5", "Samuel"}, {"r6", "Gast"},
+// Fallback only. The real list comes from the backend via resident_directory;
+// these are used until the first successful sync, and on a device that has
+// never reached the backend. There is deliberately no guest entry: the host pays.
+inline constexpr Resident default_residents[] = {
+  {"r1", "Naoki"},  {"r2", "Lena"},   {"r3", "Tobias"}, {"r4", "Miriam"},
+  {"r5", "Samuel"}, {"r6", "Anna"},   {"r7", "David"},
 };
-inline constexpr uint8_t resident_count = sizeof(residents) / sizeof(residents[0]);
+inline constexpr uint8_t default_resident_count =
+    sizeof(default_residents) / sizeof(default_residents[0]);
 
 // High-contrast dark theme, chosen to stay readable in a dim kitchen.
 namespace theme {
@@ -53,6 +64,8 @@ inline constexpr uint32_t danger = 0xC0392B;
 // Simulated backend latency for the milestone 3 prototype, in milliseconds.
 inline constexpr uint32_t mock_submit_ms = 800;
 // How long SUCCESS stays on screen before returning to the catalog.
-inline constexpr uint32_t success_dwell_ms = 2000;
+inline constexpr uint32_t success_dwell_ms = 2500;
+// How long the consumption summary stays up before returning on its own.
+inline constexpr uint32_t summary_dwell_ms = 15000;
 
 }  // namespace settings

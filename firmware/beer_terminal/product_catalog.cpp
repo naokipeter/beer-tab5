@@ -9,7 +9,7 @@ Product g_items[settings::max_products];
 uint8_t g_count = 0;
 
 void add(const char* barcode, const char* name, int32_t rappen, bool free_item,
-         const char* image_url) {
+         const char* image_url, bool active) {
   if (g_count >= settings::max_products) return;
   Product& p = g_items[g_count++];
   snprintf(p.barcode, sizeof(p.barcode), "%s", barcode);
@@ -17,6 +17,17 @@ void add(const char* barcode, const char* name, int32_t rappen, bool free_item,
   p.price_rappen = rappen;
   p.free_item = free_item;
   snprintf(p.image_url, sizeof(p.image_url), "%s", image_url);
+  p.active = active;
+}
+
+int8_t nth_matching(uint8_t index, bool want_active) {
+  uint8_t seen = 0;
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (g_items[i].active != want_active) continue;
+    if (seen == index) return static_cast<int8_t>(i);
+    ++seen;
+  }
+  return -1;
 }
 
 }  // namespace
@@ -24,44 +35,104 @@ void add(const char* barcode, const char* name, int32_t rappen, bool free_item,
 void begin() {
   g_count = 0;
   // Mock catalog for the prototype. Barcodes are plausible but not authoritative;
-  // real values arrive with the backend catalog in milestone 6.
-  add("7610807000019", "Feldschlosschen Original", 180, false, "");
-  add("7610827000024", "Appenzeller Quollfrisch", 220, false, "");
-  add("7610900000038", "Calanda Brau", 190, false, "");
-  add("7613100000045", "Chopfab Draft", 260, false, "");
-  add("7610827000055", "Appenzeller Naturperle", 240, false, "");
-  add("7610013000062", "Boxer Old", 170, false, "");
-  add("7610700000079", "Valaisanne Pale Ale", 280, false, "");
-  add("7613300000086", "Turbinenbrau Gassenhauer", 0, true, "");
+  // real values arrive with the backend catalog in milestone 6. Two active
+  // products match the usual stock; the rest start archived so the restore flow
+  // has something to show.
+  add("7610807000019", "Feldschlosschen Original", 180, false, "", true);
+  add("7610827000024", "Appenzeller Quollfrisch", 220, false, "", true);
+  add("7610900000038", "Calanda Brau", 190, false, "", false);
+  add("7613100000045", "Chopfab Draft", 260, false, "", false);
+  add("7610827000055", "Appenzeller Naturperle", 240, false, "", false);
+  add("7610013000062", "Boxer Old", 170, false, "", false);
+  add("7610700000079", "Valaisanne Pale Ale", 280, false, "", false);
+  add("7613300000086", "Turbinenbrau Gassenhauer", 0, true, "", false);
 }
 
-uint8_t count() { return g_count; }
+uint8_t active_count() {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (g_items[i].active) ++n;
+  }
+  return n;
+}
 
-const Product* at(uint8_t index) {
-  return index < g_count ? &g_items[index] : nullptr;
+uint8_t archived_count() {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (!g_items[i].active) ++n;
+  }
+  return n;
+}
+
+const Product* active_at(uint8_t index) {
+  const int8_t s = nth_matching(index, true);
+  return s < 0 ? nullptr : &g_items[s];
+}
+
+const Product* archived_at(uint8_t index) {
+  const int8_t s = nth_matching(index, false);
+  return s < 0 ? nullptr : &g_items[s];
+}
+
+int8_t storage_index_of_active(uint8_t index) { return nth_matching(index, true); }
+int8_t storage_index_of_archived(uint8_t index) { return nth_matching(index, false); }
+
+const Product* at_storage(int8_t storage_index) {
+  if (storage_index < 0 || storage_index >= static_cast<int8_t>(g_count)) return nullptr;
+  return &g_items[storage_index];
+}
+
+bool archive(int8_t storage_index) {
+  if (storage_index < 0 || storage_index >= static_cast<int8_t>(g_count)) return false;
+  if (!g_items[storage_index].active) return false;
+  g_items[storage_index].active = false;
+  return true;
+}
+
+bool can_restore() { return active_count() < settings::max_active_products; }
+
+bool restore(int8_t storage_index) {
+  if (storage_index < 0 || storage_index >= static_cast<int8_t>(g_count)) return false;
+  if (g_items[storage_index].active || !can_restore()) return false;
+  g_items[storage_index].active = true;
+  return true;
+}
+
+int8_t add_product(const char* name, int32_t price_rappen, bool free_item) {
+  if (!name || name[0] == '\0') return -1;
+  if (!can_restore() || g_count >= settings::max_products) return -1;
+  add("", name, price_rappen, free_item, "", true);
+  return static_cast<int8_t>(g_count - 1);
 }
 
 int8_t find(const char* barcode) {
+  if (!barcode || barcode[0] == '\0') return -1;
   for (uint8_t i = 0; i < g_count; ++i) {
     if (strcmp(g_items[i].barcode, barcode) == 0) return static_cast<int8_t>(i);
   }
   return -1;
 }
 
-void format_price(const Product& p, char* out, size_t len) {
-  if (p.free_item) {
+void format_rappen(int32_t rappen, bool free_item, char* out, size_t len) {
+  if (free_item) {
     snprintf(out, len, "Gratis");
     return;
   }
   // Integer division keeps the amount exact; no float ever touches a price.
-  snprintf(out, len, "CHF %ld.%02ld", static_cast<long>(p.price_rappen / 100),
-           static_cast<long>(p.price_rappen % 100));
+  snprintf(out, len, "CHF %ld.%02ld", static_cast<long>(rappen / 100),
+           static_cast<long>(rappen % 100));
+}
+
+void format_price(const Product& p, char* out, size_t len) {
+  format_rappen(p.price_rappen, p.free_item, out, len);
 }
 
 uint32_t fallback_colour(const Product& p) {
-  // FNV-1a over the barcode, mapped into a warm band so tiles stay on-theme.
+  // FNV-1a over the barcode, or the name for an ad hoc product, mapped into a
+  // warm band so tiles stay on-theme.
+  const char* key = p.barcode[0] ? p.barcode : p.name;
   uint32_t h = 2166136261u;
-  for (const char* c = p.barcode; *c; ++c) {
+  for (const char* c = key; *c; ++c) {
     h ^= static_cast<uint8_t>(*c);
     h *= 16777619u;
   }

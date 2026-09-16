@@ -12,7 +12,9 @@ sleep implementation yet; those stay in their later milestones.
 | `firmware/beer_terminal/build_opt.h` | `-DLV_CONF_INCLUDE_SIMPLE`, so the sketch-local `lv_conf.h` is the one LVGL uses for both the sketch and the library. |
 | `app_state.h/.cpp` | The eleven states, the events between them, the purchase context and a transaction ID generated once per attempt. Timed transitions are non-blocking. |
 | `catalog_layout.h/.cpp` | Adaptive grid geometry. No LVGL or Arduino dependency, integer-only, so it is testable on the host. |
-| `product_catalog.h/.cpp` | Fixed-capacity catalog (max 8), integer rappen, price formatting, and the deterministic no-photo tile colour. |
+| `product_catalog.h/.cpp` | Fixed-capacity catalog with archive/restore: up to 8 active on the grid, 32 stored. Integer rappen, price formatting, deterministic no-photo tile colour. |
+| `resident_directory.h/.cpp` | The resident list. Seeded from `settings::default_residents`, replaced wholesale by the backend in milestone 7. A malformed list is rejected rather than leaving the device unable to record a purchase. |
+| `purchase_log.h/.cpp` | Per-resident drink and rappen tally behind the summary screen. |
 | `display_ui.h/.cpp` | LVGL port: PSRAM draw buffers, flush through `M5.Display.pushImage`, touch through `M5.Touch`, `millis` as the tick source. |
 | `ui_screens.h/.cpp` | One builder per state. Screens are rebuilt on transition only. |
 | `ui_lvgl.h` | Includes LVGL and asserts major version 9, so an LVGL 8 sketchbook copy reports itself instead of producing dozens of rename errors. |
@@ -21,6 +23,23 @@ sleep implementation yet; those stay in their later milestones.
 `settings.h` gained the screen metrics, the resident list, the theme and the
 prototype's simulated latencies. Residents are placeholders and must be replaced
 before deployment.
+
+## Household changes
+
+Seven residents, no guest entry — the host pays. The resident-selection screen
+shows those seven plus an eighth **Bier archivieren** button, which is why the
+grid rule lands on exactly 2 x 4 there. That layout follows the resident count,
+so a backend list of a different size still lays out correctly; the host test
+checks every count from 1 to `max_residents` for bounds and minimum tap size.
+
+**Nicht gelistet** now offers the archived beers first and only falls through to
+the new-product form when there is nothing to restore, or when you press
+**Neues Bier anlegen**. The mock catalog therefore starts with two active beers,
+matching the usual stock, and six archived ones so the restore flow has content.
+
+The confirmation screen carries an **Ubersicht anzeigen** button. Ignoring it
+returns to the catalog as before; pressing it opens the consumption table, which
+also returns on its own after 15 seconds so the terminal never sits lit.
 
 ## Grid rule, as tested
 
@@ -47,7 +66,7 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 972,760 bytes | 30,240 bytes |
+| `./tools/build.sh` (C++17) | PASS | 977,398 bytes | 36,496 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
@@ -83,19 +102,30 @@ Host, no hardware:
 
 On the Tab5, after uploading (see README for the port-independent upload command):
 
-1. The catalog shows eight tiles as 2 x 4, each with a coloured placeholder, name
-   and price. `Turbinenbrau Gassenhauer` reads `Gratis` in green.
-2. Tap a tile. The header shows the product and price; six resident buttons appear.
+1. The catalog shows two tiles side by side, each with a coloured placeholder,
+   name and price.
+2. Tap a tile. The header shows the product and price; seven resident buttons and
+   `Bier archivieren` appear as a 2 x 4 grid.
 3. Tap a name. A spinner shows for about 0.8 s, then a green `Gebucht` screen names
-   the resident and product, and after 2 s the catalog returns.
-4. `Zuruck` from the resident screen returns to the catalog without recording.
-5. `Nicht gelistet` opens the ad hoc product screen. Tapping the name field raises
-   the keyboard; the numeric pad composes a price capped at CHF 99.99; `C` clears;
-   `Gratis` overrides the price. `Weiter` is inert until a price or Gratis is set.
-6. Long-press the header to open Admin. Enable `Nachsten Fehler simulieren`, go back,
-   and complete a purchase: it must land on the error screen with a retry that keeps
-   the same transaction ID (visible in the serial log).
-7. Serial at 115200 prints every transition as `[state] FROM -> TO`.
+   the resident and product.
+4. On that screen, press `Ubersicht anzeigen`: the table lists each resident with a
+   drink count and total. It returns on its own after 15 s, or on `Zuruck`.
+   Ignoring the button instead returns to the catalog after 2.5 s.
+5. `Zuruck` from the resident screen returns to the catalog without recording.
+6. Tap a tile, then `Bier archivieren`. Confirm. The beer leaves the grid and the
+   layout re-flows to a single full-width tile. `Abbrechen` on the confirmation
+   must leave it in place.
+7. `Nicht gelistet` now lists the archived beers. Tapping one restores it to the
+   grid. `Neues Bier anlegen` reaches the ad hoc form: the name field raises the
+   keyboard, the numeric pad composes a price capped at CHF 99.99, `C` clears,
+   `Gratis` overrides the price, and `Weiter` is inert until a price or Gratis is set.
+8. Restore beers until eight are active. The archived screen must then refuse
+   further restores and say the fridge is full.
+9. Long-press the header to open Admin. It reports the active and archived counts
+   and whether residents came from the backend or the local fallback. Enable
+   `Nachsten Fehler simulieren`, go back, and complete a purchase: it must land on
+   the error screen with a retry that keeps the same transaction ID (serial log).
+10. Serial at 115200 prints every transition as `[state] FROM -> TO`.
 
 ## Requires the physical Tab5
 
@@ -104,7 +134,11 @@ On the Tab5, after uploading (see README for the port-independent upload command
 - **Touch accuracy against LVGL's hit testing**, especially near tile edges and on
   the keyboard, which milestone 2 validated only for raw coordinates.
 - **Whether the tiles are genuinely thumb-sized** at arm's length in front of a
-  fridge. The 2 x 4 tile is 300 x 268; this is the layout's real acceptance test.
+  fridge. With the usual two beers each tile is 616 x 552, but the resident grid
+  is always 300 x 254 buttons; that is the tighter case to judge.
+- **Whether the archive button belongs on the resident screen.** It sits beside
+  seven names, so a mis-tap costs a confirmation screen rather than a purchase.
+  Worth watching in real use.
 - **Redraw latency.** Partial render with two 1280 x 40 PSRAM buffers is a starting
   point, not a measured choice. If screen rebuilds feel slow, the levers are buffer
   size, buffer placement in internal RAM, `LV_USE_OS`/`LV_DRAW_SW_DRAW_UNIT_CNT`,

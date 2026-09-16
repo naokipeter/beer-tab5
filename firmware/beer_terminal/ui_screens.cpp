@@ -5,14 +5,17 @@
 #include <string.h>
 #include "catalog_layout.h"
 #include "product_catalog.h"
+#include "purchase_log.h"
+#include "resident_directory.h"
 #include "settings.h"
 
 namespace ui_screens {
 namespace {
 
 using app_state::Event;
-using catalog_layout::GridGeometry;
 using app_state::State;
+using catalog_layout::Bounds;
+using catalog_layout::GridGeometry;
 
 // Price being composed on the NEW_PRODUCT keypad, in rappen.
 int32_t g_entry_rappen = 0;
@@ -72,26 +75,33 @@ lv_obj_t* make_button(lv_obj_t* parent, const char* text, int16_t x, int16_t y,
   return b;
 }
 
+void* as_ud(uintptr_t v) { return reinterpret_cast<void*>(v); }
+uintptr_t from_ud(lv_event_t* e) {
+  return reinterpret_cast<uintptr_t>(lv_event_get_user_data(e));
+}
+
 // ---- events -------------------------------------------------------------
 
 void on_tile(lv_event_t* e) {
-  const uint8_t index = static_cast<uint8_t>(
-      reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
-  app_state::select_product(index);
+  app_state::select_product(static_cast<uint8_t>(from_ud(e)));
   app_state::dispatch(Event::ProductSelected);
 }
 
 void on_resident(lv_event_t* e) {
-  const int8_t index = static_cast<int8_t>(
-      reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
-  app_state::context().resident_index = index;
+  app_state::context().resident_index = static_cast<int8_t>(from_ud(e));
   app_state::dispatch(Event::ResidentSelected);
 }
 
 void on_event_button(lv_event_t* e) {
-  const Event ev = static_cast<Event>(
-      reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
-  app_state::dispatch(ev);
+  app_state::dispatch(static_cast<Event>(from_ud(e)));
+}
+
+void on_restore(lv_event_t* e) {
+  const int8_t storage =
+      product_catalog::storage_index_of_archived(static_cast<uint8_t>(from_ud(e)));
+  if (product_catalog::restore(storage)) {
+    app_state::dispatch(Event::ProductRestored);
+  }
 }
 
 void on_header_long_press(lv_event_t*) {
@@ -101,19 +111,14 @@ void on_header_long_press(lv_event_t*) {
 void refresh_entry_price() {
   if (!g_entry_price_label) return;
   char buf[32];
-  if (g_entry_free) {
-    snprintf(buf, sizeof(buf), "Gratis");
-  } else {
-    snprintf(buf, sizeof(buf), "CHF %ld.%02ld",
-             static_cast<long>(g_entry_rappen / 100),
-             static_cast<long>(g_entry_rappen % 100));
-  }
+  product_catalog::format_rappen(g_entry_rappen, g_entry_free, buf, sizeof(buf));
   lv_label_set_text(g_entry_price_label, buf);
 }
 
 void on_keypad(lv_event_t* e) {
   lv_obj_t* mx = static_cast<lv_obj_t*>(lv_event_get_target(e));
-  const char* txt = lv_buttonmatrix_get_button_text(mx, lv_buttonmatrix_get_selected_button(mx));
+  const char* txt =
+      lv_buttonmatrix_get_button_text(mx, lv_buttonmatrix_get_selected_button(mx));
   if (!txt) return;
   if (strcmp(txt, "C") == 0) {
     g_entry_rappen = 0;
@@ -138,13 +143,13 @@ void on_new_product_confirm(lv_event_t*) {
   const char* typed = g_entry_name ? lv_textarea_get_text(g_entry_name) : "";
   // Sanitised properly server-side in milestone 8; this only bounds the length
   // and substitutes a placeholder so a purchase is never nameless.
-  if (!typed || typed[0] == '\0') {
-    snprintf(name, sizeof(name), "Unbekanntes Bier");
-  } else {
-    snprintf(name, sizeof(name), "%s", typed);
-  }
+  snprintf(name, sizeof(name), "%s", (typed && typed[0]) ? typed : "Unbekanntes Bier");
   if (!g_entry_free && g_entry_rappen <= 0) return;  // needs a price or Gratis
+
+  const int8_t storage =
+      product_catalog::add_product(name, g_entry_rappen, g_entry_free);
   app_state::set_ad_hoc_product(name, g_entry_rappen, g_entry_free);
+  if (storage >= 0) app_state::context().product_index = storage;
   app_state::dispatch(Event::NewProductReady);
 }
 
@@ -191,127 +196,213 @@ void build_header(lv_obj_t* scr, const char* title, bool admin_gesture) {
   }
 }
 
+// Two footer buttons across the bottom strip.
+void build_footer_pair(lv_obj_t* scr, const char* left, lv_event_cb_t left_cb,
+                       void* left_ud, uint32_t left_bg, uint32_t left_fg,
+                       const char* right, lv_event_cb_t right_cb, void* right_ud,
+                       uint32_t right_bg, uint32_t right_fg) {
+  const int16_t fy = settings::screen_h - settings::footer_h + 14;
+  const int16_t fw = (settings::screen_w - 3 * settings::grid_margin) / 2;
+  make_button(scr, left, settings::grid_margin, fy, fw, 44, left_bg, left_fg, left_cb,
+              left_ud);
+  make_button(scr, right, 2 * settings::grid_margin + fw, fy, fw, 44, right_bg,
+              right_fg, right_cb, right_ud);
+}
+
+void build_footer_single(lv_obj_t* scr, const char* text, Event ev, uint32_t bg,
+                         uint32_t fg) {
+  make_button(scr, text, settings::grid_margin,
+              settings::screen_h - settings::footer_h + 14,
+              settings::screen_w - 2 * settings::grid_margin, 44, bg, fg,
+              on_event_button, as_ud(static_cast<uintptr_t>(ev)));
+}
+
+// Shared product tile, used by the catalog and the archived list.
+void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
+                        const GridGeometry& g, int16_t x, int16_t y,
+                        lv_event_cb_t cb, void* ud, bool dim) {
+  lv_obj_t* tile = lv_button_create(scr);
+  lv_obj_set_pos(tile, x, y);
+  lv_obj_set_size(tile, g.tile_w, g.tile_h);
+  lv_obj_set_style_bg_color(tile, col(settings::theme::surface), 0);
+  lv_obj_set_style_radius(tile, 6, 0);
+  lv_obj_set_style_border_width(tile, 0, 0);
+  lv_obj_set_style_shadow_width(tile, 0, 0);
+  lv_obj_set_style_pad_all(tile, 14, 0);
+  if (cb) lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, ud);
+
+  // Photo placeholder. Milestone 6 swaps this for the cached Open Food Facts
+  // image; the deterministic colour stays as the no-photo fallback.
+  const int16_t photo = static_cast<int16_t>(fminf(
+      g.horizontal_card ? g.tile_h * 0.72f : g.tile_h * 0.52f, g.tile_w * 0.62f));
+  lv_obj_t* img = make_panel(tile, 0, 0, photo, photo,
+                             product_catalog::fallback_colour(p));
+  lv_obj_set_style_radius(img, 4, 0);
+  if (dim) lv_obj_set_style_bg_opa(img, LV_OPA_40, 0);
+
+  char initial[2] = {p.name[0], '\0'};
+  lv_obj_t* il = make_label(img, initial, 0xFFFFFF, font_for(photo / 3));
+  lv_obj_set_style_text_opa(il, LV_OPA_70, 0);
+  lv_obj_center(il);
+
+  char price[32];
+  product_catalog::format_price(p, price, sizeof(price));
+  const int16_t name_px = static_cast<int16_t>(fminf(g.tile_h * 0.11f, 26.0f));
+  const int16_t price_px = static_cast<int16_t>(fminf(g.tile_h * 0.15f, 34.0f));
+
+  lv_obj_t* name = make_label(tile, p.name,
+                              dim ? settings::theme::text_muted : settings::theme::text,
+                              font_for(name_px));
+  lv_label_set_long_mode(name, LV_LABEL_LONG_WRAP);
+  lv_obj_t* cost = make_label(
+      tile, price,
+      dim ? settings::theme::text_muted
+          : (p.free_item ? settings::theme::ok : settings::theme::accent),
+      font_for(price_px));
+
+  if (g.horizontal_card) {
+    lv_obj_align(img, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_width(name, g.tile_w - photo - 28 - 14);
+    lv_obj_align(name, LV_ALIGN_LEFT_MID, photo + 14, -price_px / 2);
+    lv_obj_align(cost, LV_ALIGN_LEFT_MID, photo + 14, name_px);
+  } else {
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_width(name, g.tile_w - 28);
+    lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, photo + 12);
+    lv_obj_align(cost, LV_ALIGN_BOTTOM_MID, 0, 0);
+  }
+}
+
 // ---- screens ------------------------------------------------------------
 
 void build_catalog() {
   lv_obj_t* scr = build_root();
   build_header(scr, "Was trinksch?", true);
 
-  const uint8_t n = product_catalog::count();
-  const GridGeometry g = catalog_layout::grid_geometry(n);
-
-  for (uint8_t i = 0; i < n; ++i) {
-    const product_catalog::Product* p = product_catalog::at(i);
-    int16_t x = 0, y = 0;
-    catalog_layout::tile_position(g, n, i, x, y);
-
-    lv_obj_t* tile = lv_button_create(scr);
-    lv_obj_set_pos(tile, x, y);
-    lv_obj_set_size(tile, g.tile_w, g.tile_h);
-    lv_obj_set_style_bg_color(tile, col(settings::theme::surface), 0);
-    lv_obj_set_style_radius(tile, 6, 0);
-    lv_obj_set_style_border_width(tile, 0, 0);
-    lv_obj_set_style_shadow_width(tile, 0, 0);
-    lv_obj_set_style_pad_all(tile, 14, 0);
-    lv_obj_add_event_cb(tile, on_tile, LV_EVENT_CLICKED,
-                        reinterpret_cast<void*>(static_cast<uintptr_t>(i)));
-
-    // Photo placeholder. Milestone 6 swaps this for the cached Open Food Facts
-    // image; the deterministic colour stays as the no-photo fallback.
-    const int16_t photo = static_cast<int16_t>(
-        fminf(g.horizontal_card ? g.tile_h * 0.72f : g.tile_h * 0.52f,
-              g.tile_w * 0.62f));
-    lv_obj_t* img = make_panel(tile, 0, 0, photo, photo,
-                               product_catalog::fallback_colour(*p));
-    lv_obj_set_style_radius(img, 4, 0);
-
-    char initial[2] = {p->name[0], '\0'};
-    lv_obj_t* il = make_label(img, initial, 0xFFFFFF, font_for(photo / 3));
-    lv_obj_set_style_text_opa(il, LV_OPA_70, 0);
-    lv_obj_center(il);
-
-    char price[32];
-    product_catalog::format_price(*p, price, sizeof(price));
-    const int16_t name_px = static_cast<int16_t>(fminf(g.tile_h * 0.11f, 26.0f));
-    const int16_t price_px = static_cast<int16_t>(fminf(g.tile_h * 0.15f, 34.0f));
-
-    lv_obj_t* name = make_label(tile, p->name, settings::theme::text, font_for(name_px));
-    lv_label_set_long_mode(name, LV_LABEL_LONG_WRAP);
-    lv_obj_t* cost = make_label(tile, price,
-                                p->free_item ? settings::theme::ok : settings::theme::accent,
-                                font_for(price_px));
-
-    if (g.horizontal_card) {
-      lv_obj_align(img, LV_ALIGN_LEFT_MID, 0, 0);
-      const int16_t text_w = g.tile_w - photo - 28 - 14;
-      lv_obj_set_width(name, text_w);
-      lv_obj_align(name, LV_ALIGN_LEFT_MID, photo + 14, -price_px / 2);
-      lv_obj_align(cost, LV_ALIGN_LEFT_MID, photo + 14, name_px);
-    } else {
-      lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 0);
-      lv_obj_set_width(name, g.tile_w - 28);
-      lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-      lv_obj_align(name, LV_ALIGN_TOP_MID, 0, photo + 12);
-      lv_obj_align(cost, LV_ALIGN_BOTTOM_MID, 0, 0);
+  const uint8_t n = product_catalog::active_count();
+  if (n == 0) {
+    lv_obj_t* l = make_label(scr, "Kein Bier im Kuhlschrank",
+                             settings::theme::text_muted, &lv_font_montserrat_32);
+    lv_obj_center(l);
+  } else {
+    const Bounds b = catalog_layout::catalog_bounds();
+    const GridGeometry g = catalog_layout::grid_geometry(n, b);
+    for (uint8_t i = 0; i < n; ++i) {
+      const product_catalog::Product* p = product_catalog::active_at(i);
+      int16_t x = 0, y = 0;
+      catalog_layout::tile_position(g, b, n, i, x, y);
+      build_product_tile(scr, *p, g, x, y, on_tile, as_ud(i), false);
     }
   }
 
   // Constant actions live in the footer so the product count alone drives layout.
-  const int16_t fy = settings::screen_h - settings::footer_h + 14;
-  const int16_t fw = (settings::screen_w - 3 * settings::grid_margin) / 2;
-  make_button(scr, "Nicht gelistet", settings::grid_margin, fy, fw, 44,
-              settings::theme::surface_alt, settings::theme::text, on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::NotListed)));
-  make_button(scr, "Abbrechen", 2 * settings::grid_margin + fw, fy, fw, 44,
-              settings::theme::surface_alt, settings::theme::text_muted, on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Sleep)));
+  build_footer_pair(scr, "Nicht gelistet", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::NotListed)),
+                    settings::theme::surface_alt, settings::theme::text,
+                    "Abbrechen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Sleep)),
+                    settings::theme::surface_alt, settings::theme::text_muted);
 }
 
 void build_resident() {
   lv_obj_t* scr = build_root();
   const app_state::Context& ctx = app_state::context();
 
-  char title[96];
   char price[32];
-  if (ctx.free_item) {
-    snprintf(price, sizeof(price), "Gratis");
-  } else {
-    snprintf(price, sizeof(price), "CHF %ld.%02ld",
-             static_cast<long>(ctx.price_rappen / 100),
-             static_cast<long>(ctx.price_rappen % 100));
-  }
+  product_catalog::format_rappen(ctx.price_rappen, ctx.free_item, price, sizeof(price));
+  char title[96];
   snprintf(title, sizeof(title), "%s  -  %s", ctx.product_name, price);
   build_header(scr, title, false);
 
   lv_obj_t* prompt = make_label(scr, "Wer trinkt?", settings::theme::text_muted,
                                 &lv_font_montserrat_20);
-  lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h - 4);
+  lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h);
 
-  // Residents use the same adaptive geometry as the catalog, one row per 3.
-  const uint8_t n = settings::resident_count;
-  const uint8_t cols = n <= 3 ? n : (n + 1) / 2;
-  const uint8_t rows = (n + cols - 1) / cols;
-  const int16_t top = settings::header_h + 28;
-  const int16_t gw = settings::screen_w - 2 * settings::grid_margin;
-  const int16_t gh = settings::screen_h - top - settings::footer_h - settings::grid_margin;
-  const int16_t bw = (gw - (cols - 1) * settings::grid_gap) / cols;
-  const int16_t bh = (gh - (rows - 1) * settings::grid_gap) / rows;
+  // Residents plus one archive button share the same tested grid rule, so the
+  // layout follows however many people the backend supplies.
+  const uint8_t people = resident_directory::count();
+  const uint8_t n = static_cast<uint8_t>(people + 1);
+  const Bounds b = catalog_layout::resident_bounds();
+  const GridGeometry g = catalog_layout::grid_geometry(n, b);
 
   for (uint8_t i = 0; i < n; ++i) {
-    const uint8_t r = i / cols, c = i % cols;
-    make_button(scr, settings::residents[i].name,
-                settings::grid_margin + c * (bw + settings::grid_gap),
-                top + r * (bh + settings::grid_gap), bw, bh,
-                settings::theme::surface, settings::theme::text, on_resident,
-                reinterpret_cast<void*>(static_cast<uintptr_t>(i)));
+    int16_t x = 0, y = 0;
+    catalog_layout::tile_position(g, b, n, i, x, y);
+    if (i < people) {
+      const resident_directory::Entry* r = resident_directory::at(i);
+      make_button(scr, r->name, x, y, g.tile_w, g.tile_h, settings::theme::surface,
+                  settings::theme::text, on_resident, as_ud(i));
+    } else {
+      make_button(scr, "Bier archivieren", x, y, g.tile_w, g.tile_h,
+                  settings::theme::surface_alt, settings::theme::danger,
+                  on_event_button,
+                  as_ud(static_cast<uintptr_t>(Event::ArchiveRequested)));
+    }
   }
 
-  make_button(scr, "Zuruck", settings::grid_margin,
-              settings::screen_h - settings::footer_h + 14,
-              settings::screen_w - 2 * settings::grid_margin, 44,
-              settings::theme::surface_alt, settings::theme::text_muted,
-              on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Cancel)));
+  build_footer_single(scr, "Zuruck", Event::Cancel, settings::theme::surface_alt,
+                      settings::theme::text_muted);
+}
+
+void build_archived() {
+  lv_obj_t* scr = build_root();
+  build_header(scr, "Schon mal dagewesen", false);
+
+  const bool room = product_catalog::can_restore();
+  lv_obj_t* prompt = make_label(
+      scr,
+      room ? "Zuruck in den Kuhlschrank, oder neu anlegen?"
+           : "Kuhlschrank voll - zuerst ein Bier archivieren",
+      room ? settings::theme::text_muted : settings::theme::danger,
+      &lv_font_montserrat_20);
+  lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h);
+
+  const uint8_t n = product_catalog::archived_count();
+  const Bounds b = catalog_layout::resident_bounds();
+  const GridGeometry g = catalog_layout::grid_geometry(n, b);
+  for (uint8_t i = 0; i < n; ++i) {
+    const product_catalog::Product* p = product_catalog::archived_at(i);
+    int16_t x = 0, y = 0;
+    catalog_layout::tile_position(g, b, n, i, x, y);
+    build_product_tile(scr, *p, g, x, y, room ? on_restore : nullptr, as_ud(i), !room);
+  }
+
+  build_footer_pair(scr, "Abbrechen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Cancel)),
+                    settings::theme::surface_alt, settings::theme::text_muted,
+                    "Neues Bier anlegen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::CreateNewProduct)),
+                    settings::theme::accent, 0x12120F);
+}
+
+void build_confirm_archive() {
+  lv_obj_t* scr = build_root();
+  build_header(scr, "Archivieren", false);
+
+  const product_catalog::Product* p =
+      product_catalog::at_storage(app_state::context().archive_storage_index);
+
+  char line[96];
+  snprintf(line, sizeof(line), "%s", p ? p->name : app_state::context().product_name);
+  lv_obj_t* name = make_label(scr, line, settings::theme::text, &lv_font_montserrat_48);
+  lv_obj_align(name, LV_ALIGN_CENTER, 0, -60);
+
+  lv_obj_t* q = make_label(scr, "aus dem Kuhlschrank nehmen?", settings::theme::text,
+                           &lv_font_montserrat_32);
+  lv_obj_align(q, LV_ALIGN_CENTER, 0, 0);
+
+  lv_obj_t* hint = make_label(
+      scr, "Bleibt gespeichert und kann uber \"Nicht gelistet\" zuruckgeholt werden.",
+      settings::theme::text_muted, &lv_font_montserrat_20);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 50);
+
+  build_footer_pair(scr, "Abbrechen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Cancel)),
+                    settings::theme::surface_alt, settings::theme::text,
+                    "Archivieren", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::ArchiveConfirmed)),
+                    settings::theme::danger, 0xFFFFFF);
 }
 
 void build_new_product() {
@@ -356,14 +447,11 @@ void build_new_product() {
   lv_obj_set_style_radius(pad, 6, LV_PART_ITEMS);
   lv_obj_add_event_cb(pad, on_keypad, LV_EVENT_VALUE_CHANGED, nullptr);
 
-  const int16_t fy = settings::screen_h - settings::footer_h + 14;
-  const int16_t fw = (settings::screen_w - 3 * settings::grid_margin) / 2;
-  make_button(scr, "Abbrechen", settings::grid_margin, fy, fw, 44,
-              settings::theme::surface_alt, settings::theme::text_muted,
-              on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Cancel)));
-  make_button(scr, "Weiter", 2 * settings::grid_margin + fw, fy, fw, 44,
-              settings::theme::accent, 0x12120F, on_new_product_confirm, nullptr);
+  build_footer_pair(scr, "Abbrechen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Cancel)),
+                    settings::theme::surface_alt, settings::theme::text_muted,
+                    "Weiter", on_new_product_confirm, nullptr, settings::theme::accent,
+                    0x12120F);
 
   g_keyboard = lv_keyboard_create(scr);
   lv_obj_set_size(g_keyboard, settings::screen_w, 300);
@@ -389,17 +477,82 @@ void build_success() {
   const app_state::Context& ctx = app_state::context();
   lv_obj_set_style_bg_color(scr, col(settings::theme::ok), 0);
 
+  const resident_directory::Entry* r =
+      ctx.resident_index >= 0
+          ? resident_directory::at(static_cast<uint8_t>(ctx.resident_index))
+          : nullptr;
   char line[128];
-  const char* who = (ctx.resident_index >= 0 &&
-                     ctx.resident_index < static_cast<int8_t>(settings::resident_count))
-                        ? settings::residents[ctx.resident_index].name
-                        : "?";
-  snprintf(line, sizeof(line), "%s: %s", who, ctx.product_name);
+  snprintf(line, sizeof(line), "%s: %s", r ? r->name : "?", ctx.product_name);
 
   lv_obj_t* big = make_label(scr, "Gebucht", 0xFFFFFF, &lv_font_montserrat_48);
-  lv_obj_align(big, LV_ALIGN_CENTER, 0, -50);
+  lv_obj_align(big, LV_ALIGN_CENTER, 0, -90);
   lv_obj_t* l = make_label(scr, line, 0xFFFFFF, &lv_font_montserrat_32);
-  lv_obj_align(l, LV_ALIGN_CENTER, 0, 20);
+  lv_obj_align(l, LV_ALIGN_CENTER, 0, -20);
+
+  // Offered, not forced: ignoring it returns to the catalog on its own.
+  make_button(scr, "Ubersicht anzeigen", (settings::screen_w - 520) / 2,
+              settings::screen_h / 2 + 60, 520, 84, 0xFFFFFF, settings::theme::ok,
+              on_event_button, as_ud(static_cast<uintptr_t>(Event::ShowSummary)));
+}
+
+void build_summary() {
+  lv_obj_t* scr = build_root();
+  build_header(scr, "Ubersicht", false);
+
+  const uint8_t n = purchase_log::count();
+  if (n == 0) {
+    lv_obj_t* l = make_label(scr, "Noch nichts erfasst", settings::theme::text_muted,
+                             &lv_font_montserrat_32);
+    lv_obj_center(l);
+  } else {
+    const int16_t top = settings::header_h + 12;
+    const int16_t row_h = 52;
+    const int16_t w = settings::screen_w - 2 * settings::grid_margin;
+
+    lv_obj_t* h1 = make_label(scr, "Name", settings::theme::text_muted,
+                              &lv_font_montserrat_20);
+    lv_obj_set_pos(h1, settings::grid_margin + 16, top);
+    lv_obj_t* h2 = make_label(scr, "Anzahl", settings::theme::text_muted,
+                              &lv_font_montserrat_20);
+    lv_obj_set_pos(h2, settings::grid_margin + w - 420, top);
+    lv_obj_t* h3 = make_label(scr, "Total", settings::theme::text_muted,
+                              &lv_font_montserrat_20);
+    lv_obj_set_pos(h3, settings::grid_margin + w - 230, top);
+
+    for (uint8_t i = 0; i < n; ++i) {
+      const purchase_log::Tally* t = purchase_log::at(i);
+      const int16_t y = static_cast<int16_t>(top + 32 + i * row_h);
+      lv_obj_t* row = make_panel(scr, settings::grid_margin, y, w, row_h - 8,
+                                 settings::theme::surface);
+      lv_obj_t* nm = make_label(row, t->resident_name, settings::theme::text,
+                                &lv_font_montserrat_28);
+      lv_obj_align(nm, LV_ALIGN_LEFT_MID, 16, 0);
+
+      char cnt[16];
+      snprintf(cnt, sizeof(cnt), "%u", static_cast<unsigned>(t->drinks));
+      lv_obj_t* cl = make_label(row, cnt, settings::theme::text, &lv_font_montserrat_28);
+      lv_obj_align(cl, LV_ALIGN_LEFT_MID, w - 420, 0);
+
+      char sum[32];
+      product_catalog::format_rappen(t->total_rappen, false, sum, sizeof(sum));
+      lv_obj_t* sl = make_label(row, sum, settings::theme::accent, &lv_font_montserrat_28);
+      lv_obj_align(sl, LV_ALIGN_LEFT_MID, w - 230, 0);
+    }
+
+    char total[64];
+    char amount[32];
+    product_catalog::format_rappen(purchase_log::total_rappen(), false, amount,
+                                   sizeof(amount));
+    snprintf(total, sizeof(total), "%u Getranke, %s",
+             static_cast<unsigned>(purchase_log::total_drinks()), amount);
+    lv_obj_t* tl = make_label(scr, total, settings::theme::text_muted,
+                              &lv_font_montserrat_20);
+    lv_obj_align(tl, LV_ALIGN_BOTTOM_LEFT, settings::grid_margin,
+                 -settings::footer_h - 4);
+  }
+
+  build_footer_single(scr, "Zuruck", Event::Cancel, settings::theme::surface_alt,
+                      settings::theme::text);
 }
 
 void build_error() {
@@ -407,24 +560,20 @@ void build_error() {
   const app_state::Context& ctx = app_state::context();
   build_header(scr, "Fehler", false);
 
-  lv_obj_t* l = make_label(
-      scr, ctx.message[0] ? ctx.message : "Unbekannter Fehler",
-      settings::theme::text, &lv_font_montserrat_32);
+  lv_obj_t* l = make_label(scr, ctx.message[0] ? ctx.message : "Unbekannter Fehler",
+                           settings::theme::text, &lv_font_montserrat_32);
   lv_obj_align(l, LV_ALIGN_CENTER, 0, -40);
 
   lv_obj_t* hint = make_label(scr, "Der Eintrag wird nicht doppelt erfasst.",
                               settings::theme::text_muted, &lv_font_montserrat_20);
   lv_obj_align(hint, LV_ALIGN_CENTER, 0, 10);
 
-  const int16_t fy = settings::screen_h - settings::footer_h + 14;
-  const int16_t fw = (settings::screen_w - 3 * settings::grid_margin) / 2;
-  make_button(scr, "Abbrechen", settings::grid_margin, fy, fw, 44,
-              settings::theme::surface_alt, settings::theme::text_muted,
-              on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Cancel)));
-  make_button(scr, "Nochmal versuchen", 2 * settings::grid_margin + fw, fy, fw, 44,
-              settings::theme::accent, 0x12120F, on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Retry)));
+  build_footer_pair(scr, "Abbrechen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Cancel)),
+                    settings::theme::surface_alt, settings::theme::text_muted,
+                    "Nochmal versuchen", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Retry)), settings::theme::accent,
+                    0x12120F);
 }
 
 void build_admin() {
@@ -432,8 +581,8 @@ void build_admin() {
   build_header(scr, "Admin", false);
 
   int16_t y = settings::header_h + 8;
-  for (uint8_t i = 0; i < product_catalog::count(); ++i) {
-    const product_catalog::Product* p = product_catalog::at(i);
+  for (uint8_t i = 0; i < product_catalog::active_count(); ++i) {
+    const product_catalog::Product* p = product_catalog::active_at(i);
     char price[32];
     product_catalog::format_price(*p, price, sizeof(price));
     char row[80];
@@ -443,9 +592,20 @@ void build_admin() {
     y += 30;
   }
 
-  lv_obj_t* note = make_label(scr, "Preisanderung folgt in Meilenstein 11.",
-                              settings::theme::text_muted, &lv_font_montserrat_20);
-  lv_obj_set_pos(note, settings::grid_margin, y + 10);
+  char note[96];
+  snprintf(note, sizeof(note), "%u archiviert. Preisanderung folgt in Meilenstein 11.",
+           static_cast<unsigned>(product_catalog::archived_count()));
+  lv_obj_t* nl = make_label(scr, note, settings::theme::text_muted,
+                            &lv_font_montserrat_20);
+  lv_obj_set_pos(nl, settings::grid_margin, y + 10);
+
+  char src[96];
+  snprintf(src, sizeof(src), "%u Bewohner (%s)",
+           static_cast<unsigned>(resident_directory::count()),
+           resident_directory::from_backend() ? "vom Server" : "lokale Vorgabe");
+  lv_obj_t* sl = make_label(scr, src, settings::theme::text_muted,
+                            &lv_font_montserrat_20);
+  lv_obj_set_pos(sl, settings::grid_margin, y + 40);
 
   lv_obj_t* sw_label = make_label(scr, "Nachsten Fehler simulieren",
                                   settings::theme::text_muted, &lv_font_montserrat_20);
@@ -456,12 +616,8 @@ void build_admin() {
   if (app_state::failure_simulated()) lv_obj_add_state(sw, LV_STATE_CHECKED);
   lv_obj_add_event_cb(sw, on_simulate_failure, LV_EVENT_VALUE_CHANGED, nullptr);
 
-  make_button(scr, "Zuruck", settings::grid_margin,
-              settings::screen_h - settings::footer_h + 14,
-              settings::screen_w - 2 * settings::grid_margin, 44,
-              settings::theme::surface_alt, settings::theme::text,
-              on_event_button,
-              reinterpret_cast<void*>(static_cast<uintptr_t>(Event::AdminDone)));
+  build_footer_single(scr, "Zuruck", Event::AdminDone, settings::theme::surface_alt,
+                      settings::theme::text);
 }
 
 void build_sleeping() {
@@ -471,7 +627,7 @@ void build_sleeping() {
   lv_obj_center(l);
   lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(scr, on_event_button, LV_EVENT_CLICKED,
-                      reinterpret_cast<void*>(static_cast<uintptr_t>(Event::Wake)));
+                      as_ud(static_cast<uintptr_t>(Event::Wake)));
 }
 
 }  // namespace
@@ -480,17 +636,20 @@ void begin() { show(app_state::state()); }
 
 void show(State current) {
   switch (current) {
-    case State::Sleeping:         build_sleeping();    break;
-    case State::Waking:                                break;
-    case State::SelectingProduct: build_catalog();     break;
-    case State::LookingUp:        build_submitting();  break;
-    case State::ProductFound:     build_catalog();     break;
-    case State::NewProduct:       build_new_product(); break;
-    case State::SelectingUser:    build_resident();    break;
-    case State::Submitting:       build_submitting();  break;
-    case State::Success:          build_success();     break;
-    case State::Error:            build_error();       break;
-    case State::Admin:            build_admin();       break;
+    case State::Sleeping:          build_sleeping();        break;
+    case State::Waking:                                     break;
+    case State::SelectingProduct:  build_catalog();         break;
+    case State::LookingUp:         build_submitting();      break;
+    case State::ProductFound:      build_catalog();         break;
+    case State::SelectingArchived: build_archived();        break;
+    case State::ConfirmArchive:    build_confirm_archive(); break;
+    case State::NewProduct:        build_new_product();     break;
+    case State::SelectingUser:     build_resident();        break;
+    case State::Submitting:        build_submitting();      break;
+    case State::Success:           build_success();         break;
+    case State::Summary:           build_summary();         break;
+    case State::Error:             build_error();           break;
+    case State::Admin:             build_admin();           break;
   }
 }
 

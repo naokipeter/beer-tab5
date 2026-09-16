@@ -28,8 +28,10 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 | `app_state` | Explicit events/transitions, 3 |
 | `display_ui` | LVGL port: flush over M5GFX, touch input, tick source, 3 |
 | `ui_screens` | One builder per state; rebuilt on transition, never per frame, 3 |
-| `catalog_layout` | Pure adaptive-grid geometry; no LVGL/Arduino, host-tested, 3 |
-| `product_catalog` | Bounded cached catalog, tile grid model, revision sync, 6 |
+| `catalog_layout` | Pure adaptive-grid geometry for both grids; host-tested, 3 |
+| `product_catalog` | Bounded catalog with archive/restore, revision sync, 6 |
+| `resident_directory` | Resident list from the backend, compiled-in fallback, 3/7 |
+| `purchase_log` | Consumption tally behind the summary screen, 3/8 |
 | `product_lookup` | Own DB first; optional OFF fallback for manual EAN entry, 7 |
 | `wifi_manager` | C6 connection lifecycle and reconnect scheduling, 7 |
 | `purchase_logger` | HTTPS submissions and response validation, 7 |
@@ -42,8 +44,14 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 
 ## States
 
-SLEEPING, WAKING, SELECTING_PRODUCT, LOOKING_UP, PRODUCT_FOUND, NEW_PRODUCT,
-SELECTING_USER, SUBMITTING, SUCCESS, ERROR, ADMIN.
+SLEEPING, WAKING, SELECTING_PRODUCT, LOOKING_UP, PRODUCT_FOUND,
+SELECTING_ARCHIVED, CONFIRM_ARCHIVE, NEW_PRODUCT, SELECTING_USER, SUBMITTING,
+SUCCESS, SUMMARY, ERROR, ADMIN.
+
+Three states were added beyond the original list. SELECTING_ARCHIVED and
+CONFIRM_ARCHIVE exist because archiving replaced scanning as the way stock
+turns over, and both are destructive enough to deserve their own screen rather
+than a modal. SUMMARY is the consumption table reached from the confirmation.
 
 `SCANNING` becomes `SELECTING_PRODUCT`: a paged grid of large tiles (name +
 price), 8 per page. Tap a tile → PRODUCT_FOUND → resident buttons → submit.
@@ -117,12 +125,23 @@ Enter 8 or 13 digits, validate length and check digit on the device, then
 
 Removal is **archive, never delete**. Products gains an `active` column;
 `lookupProduct` still resolves archived barcodes so purchase history stays readable,
-while the tile grid shows only `active=TRUE`. Admin long-press on a tile →
-confirmation, the same pattern as price changes. Stock returns often; restore is one tap.
+while the tile grid shows only `active=TRUE`.
+
+Archiving is reachable where stock actually turns over, not buried in admin: the
+resident-selection screen carries the household's names plus one **archive**
+button, so taking a finished beer off the grid is two taps from the catalog.
+It asks for confirmation first. Restoring is the mirror image — **Nicht gelistet**
+offers the archived beers before the new-product form, because a returning beer
+is far more common than a genuinely new one. At most
+`max_active_products` (8) are on the grid at once; restoring past that is refused
+and the screen says to archive something first.
 
 ## Sheets and backend
 
 - Products: `barcode,name,price_rappen,free,image_url,active,updated_at`
+- Residents drive the selection screen and are never compiled into the UI. The
+  device falls back to `settings::default_residents` only until its first
+  successful sync, and the admin screen states which source is in use.
 - Purchases: `transaction_id,timestamp,barcode,product_name,price_rappen,resident_id,resident_name,device_id`
 - Residents: `resident_id,name,active`
 

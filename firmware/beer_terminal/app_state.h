@@ -14,8 +14,11 @@ enum class State : uint8_t {
   ProductFound,
   NewProduct,
   SelectingUser,
+  SelectingArchived,  // restore an archived beer before offering the new form
+  ConfirmArchive,     // confirm removing a beer from the fridge grid
   Submitting,
   Success,
+  Summary,            // consumption table, reached from the confirmation screen
   Error,
   Admin,
 };
@@ -24,8 +27,13 @@ enum class Event : uint8_t {
   Wake,
   ProductSelected,   // a catalog tile was tapped
   NotListed,         // the "Nicht gelistet" footer button
+  CreateNewProduct,  // skip past the archived list to the new-product form
+  ProductRestored,
   NewProductReady,   // name and price entered for an ad hoc product
   ResidentSelected,
+  ArchiveRequested,  // the archive button on the resident screen
+  ArchiveConfirmed,
+  ShowSummary,
   SubmitSucceeded,
   SubmitFailed,
   Retry,
@@ -44,6 +52,7 @@ struct Context {
   int32_t price_rappen;
   bool free_item;
   int8_t resident_index;
+  int8_t archive_storage_index;  // product awaiting archive confirmation
   char transaction_id[24];
   char message[64];       // error detail shown in the UI
 };
@@ -66,8 +75,8 @@ bool failure_simulated();
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);
 
-// Loads the context from a catalog entry before dispatching ProductSelected.
-void select_product(uint8_t catalog_index);
+// Loads the context from an active catalog entry before dispatching ProductSelected.
+void select_product(uint8_t active_index);
 // Loads the context for an ad hoc product before dispatching NewProductReady.
 void set_ad_hoc_product(const char* name, int32_t price_rappen, bool free_item);
 

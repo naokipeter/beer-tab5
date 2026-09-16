@@ -1,11 +1,15 @@
 // M5Stack Tab5 beer terminal.
 // Milestone 3: LVGL screens and the explicit state machine, driven by a mock
 // catalog. No camera, networking, backend or sleep implementation yet.
+// Resident names come from resident_directory, which the backend replaces in
+// milestone 7; they are never hard-coded into a screen.
 #include <M5Unified.h>
 
 #include "app_state.h"
 #include "display_ui.h"
 #include "product_catalog.h"
+#include "purchase_log.h"
+#include "resident_directory.h"
 #include "settings.h"
 #include "ui_screens.h"
 
@@ -23,6 +27,8 @@ void setup() {
   Serial.begin(settings::serial_baud);
 
   product_catalog::begin();
+  resident_directory::begin();
+  purchase_log::begin();
 
   if (!display_ui::begin()) {
     // Without draw buffers there is no UI to report the failure through.
@@ -33,9 +39,12 @@ void setup() {
 
   // Registered after the display exists, so the first transition can draw.
   app_state::begin(on_state_change);
-  Serial.printf("[boot] device=%s products=%u residents=%u\n", settings::device_id,
-                static_cast<unsigned>(product_catalog::count()),
-                static_cast<unsigned>(settings::resident_count));
+  Serial.printf("[boot] device=%s active=%u archived=%u residents=%u (%s)\n",
+                settings::device_id,
+                static_cast<unsigned>(product_catalog::active_count()),
+                static_cast<unsigned>(product_catalog::archived_count()),
+                static_cast<unsigned>(resident_directory::count()),
+                resident_directory::from_backend() ? "backend" : "fallback");
 }
 
 void loop() {
