@@ -73,5 +73,6 @@ void loop() {
   product_catalog::flush();
   resident_directory::flush();
   transaction_queue::flush();
+  purchase_log::flush();
   delay(5);
 }
