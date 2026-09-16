@@ -32,19 +32,10 @@ function doPost(e) {
         return jsonOut_({ok: false, error: 'Unbekannte Aktion'});
     }
   } catch (err) {
-    // An exception is a fault in this script, not a verdict on the request:
-    // a missing function, a quota, a transient Sheets failure. `retry: true`
-    // tells the terminal to keep the transaction queued rather than discard a
-    // drink because the server was briefly broken.
-    //
-    // A refusal the script means — an unknown person, a bad barcode — returns
-    // ok:false *without* retry from the handlers below, and is permanent.
+    // The message is shown on the terminal, so keep it short and free of stack
+    // detail. The full error goes to the execution log.
     console.error(err);
-    return jsonOut_({
-      ok: false,
-      retry: true,
-      error: String(err.message || err).substring(0, 60)
-    });
+    return jsonOut_({ok: false, error: String(err.message || err).substring(0, 60)});
   }
 }
 

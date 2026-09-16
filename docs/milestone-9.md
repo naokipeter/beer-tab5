@@ -24,14 +24,7 @@ The important distinction:
 |---|---|---|---|
 | `Success` | recorded, or a `duplicate` replay | popped | **Gebucht** |
 | `Unreachable` | never reached the backend | **kept** | **Gebucht**, plus "wird nachgetragen" |
-| `ServerError` | the backend broke: `ok:false` with `retry:true` | **kept** | **Gebucht**, "wird nachgetragen" |
 | `Rejected` | the backend answered and refused | popped | the error, with retry |
-
-A fault in the Apps Script — a missing function, a quota, a transient Sheets
-failure — is not a verdict on the request, so it must not discard a drink. The
-backend marks its own exceptions `retry: true`; only a refusal it actually means
-comes back without that flag. Both look like `ok:false` on the wire, and treating
-them alike cost a booking the first time a deployment went out incomplete.
 
 Telling someone their beer failed because the router is down would be wrong:
 it *is* booked, it is on flash, and it will go out. Only an outright rejection —
