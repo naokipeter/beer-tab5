@@ -1,31 +1,46 @@
-#include <Arduino.h>
+// M5Stack Tab5 beer terminal.
+// Milestone 3: LVGL screens and the explicit state machine, driven by a mock
+// catalog. No camera, networking, backend or sleep implementation yet.
 #include <M5Unified.h>
-#include "settings.h"
+
+#include "app_state.h"
 #include "display_ui.h"
+#include "product_catalog.h"
+#include "settings.h"
+#include "ui_screens.h"
 
-#if !defined(ARDUINO_M5STACK_TAB5) || !defined(CONFIG_IDF_TARGET_ESP32P4)
-#error "Select the official M5Stack M5Tab5 board."
-#endif
-static_assert(__cplusplus >= 201703L, "C++17 or newer required");
+namespace {
 
-// Milestone 2: display and touch validation before the LVGL workflow.
+void on_state_change(app_state::State, app_state::State current) {
+  ui_screens::show(current);
+}
+
+}  // namespace
+
 void setup() {
   auto cfg = M5.config();
-  cfg.internal_mic = false;
-  cfg.internal_spk = false;
-  cfg.internal_imu = false;
   M5.begin(cfg);
   Serial.begin(settings::serial_baud);
-  M5.Display.setRotation(settings::display_rotation);
-  M5.Display.setBrightness(80);
-  display_ui::begin();
-  Serial.println("Beer terminal: milestone 2 ready (rotation 3)");
-  Serial.printf("PSRAM: %u bytes; free heap: %u bytes\n",
-                ESP.getPsramSize(), ESP.getFreeHeap());
+
+  product_catalog::begin();
+
+  if (!display_ui::begin()) {
+    // Without draw buffers there is no UI to report the failure through.
+    M5.Display.setTextSize(2);
+    M5.Display.println("LVGL init failed - see serial log");
+    return;
+  }
+
+  // Registered after the display exists, so the first transition can draw.
+  app_state::begin(on_state_change);
+  Serial.printf("[boot] device=%s products=%u residents=%u\n", settings::device_id,
+                static_cast<unsigned>(product_catalog::count()),
+                static_cast<unsigned>(settings::resident_count));
 }
 
 void loop() {
-  // display_ui owns touch sampling; M5.update() would read the same controller.
+  M5.update();
+  app_state::update(millis());
   display_ui::update();
-  delay(1);  // Yield; no sleep mode and no periodic serial writes in the input loop.
+  delay(5);
 }

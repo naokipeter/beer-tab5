@@ -26,7 +26,9 @@ camera (SDK rebuild or ESP-IDF migration) remains a parked side track.
 | Module | Responsibility / milestone |
 |---|---|
 | `app_state` | Explicit events/transitions, 3 |
-| `display_ui` | LVGL display/touch adapters, screens and input widgets, 3 |
+| `display_ui` | LVGL port: flush over M5GFX, touch input, tick source, 3 |
+| `ui_screens` | One builder per state; rebuilt on transition, never per frame, 3 |
+| `catalog_layout` | Pure adaptive-grid geometry; no LVGL/Arduino, host-tested, 3 |
 | `product_catalog` | Bounded cached catalog, tile grid model, revision sync, 6 |
 | `product_lookup` | Own DB first; optional OFF fallback for manual EAN entry, 7 |
 | `wifi_manager` | C6 connection lifecycle and reconnect scheduling, 7 |

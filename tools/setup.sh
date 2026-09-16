@@ -13,3 +13,4 @@ if ! "$CLI" core list | awk '$1 == "m5stack:esp32" && $2 == "3.3.9" { found=1 } 
 fi
 "$CLI" lib install 'M5GFX@0.2.29' --no-deps
 "$CLI" lib install 'M5Unified@0.2.22' --no-deps
+"$CLI" lib install 'lvgl@9.2.2' --no-deps

@@ -1,137 +1,90 @@
 #include "display_ui.h"
 #include <M5Unified.h>
-
-namespace {
-struct Target {
-  int x, y;
-  const char* label;
-  bool passed;
-};
-constexpr int margin = 24;
-constexpr int target_width = 240;
-constexpr int target_height = 112;
-Target targets[4];
-int screen_width, screen_height;
-bool marker_visible = false;
-int marker_x, marker_y;
-uint32_t last_sample = 0;
-uint32_t last_refresh = 0;
-uint32_t sample_count = 0;
-uint32_t last_contact = 0;
-bool contact_active = false;
-bool reset_latched = false;
-
-bool inside(int x, int y, int left, int top, int width, int height) {
-  return x >= left && x < left + width && y >= top && y < top + height;
-}
-
-void draw_target(const Target& target) {
-  M5.Display.fillRoundRect(target.x, target.y, target_width, target_height, 16,
-                          target.passed ? TFT_DARKGREEN : TFT_NAVY);
-  M5.Display.drawRoundRect(target.x, target.y, target_width, target_height, 16, TFT_WHITE);
-  M5.Display.setTextColor(TFT_WHITE, target.passed ? TFT_DARKGREEN : TFT_NAVY);
-  M5.Display.setCursor(target.x + 16, target.y + 25);
-  M5.Display.println(target.label);
-  M5.Display.setCursor(target.x + 16, target.y + 64);
-  M5.Display.print(target.passed ? "OK" : "Tap here");
-}
-
-void draw_progress() {
-  unsigned passed = 0;
-  for (const auto& target : targets) passed += target.passed;
-  M5.Display.fillRect(24, 210, screen_width - 48, 38, TFT_BLACK);
-  M5.Display.setTextColor(passed == 4 ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
-  M5.Display.setCursor(32, 218);
-  if (passed == 4) M5.Display.print("All corners OK - drag in the centre");
-  else M5.Display.printf("Corners checked: %u / 4", passed);
-}
-
-void clear_marker() {
-  if (marker_visible) M5.Display.fillCircle(marker_x, marker_y, 12, TFT_BLACK);
-  marker_visible = false;
-}
-}
+#include <esp_heap_caps.h>
+#include <lvgl.h>
+#include "settings.h"
 
 namespace display_ui {
-void begin() {
-  screen_width = M5.Display.width();
-  screen_height = M5.Display.height();
-  targets[0] = {margin, margin, "Top left", false};
-  targets[1] = {screen_width - margin - target_width, margin, "Top right", false};
-  targets[2] = {margin, screen_height - margin - target_height, "Bottom left", false};
-  targets[3] = {screen_width - margin - target_width,
-                screen_height - margin - target_height, "Bottom right", false};
-  marker_visible = false;
-  M5.Display.fillScreen(TFT_BLACK);
-  M5.Display.setTextSize(3);
-  for (const auto& target : targets) draw_target(target);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.setCursor(32, 165);
-  M5.Display.print("Touch test - tap all four corners");
-  draw_progress();
-  M5.Display.drawRect(24, 270, screen_width - 48, screen_height - 440, TFT_DARKGREY);
-  const int reset_x = (screen_width - target_width) / 2;
-  const int reset_y = screen_height - margin - target_height;
-  M5.Display.drawRoundRect(reset_x, reset_y, target_width, target_height, 16, TFT_WHITE);
-  M5.Display.setCursor(reset_x + 24, reset_y + 42);
-  M5.Display.print("Start again");
-  Serial.printf("Display: %d x %d; touch enabled: %s\n", screen_width, screen_height,
-                M5.Touch.isEnabled() ? "yes" : "no");
+namespace {
+
+// Partial render mode: LVGL draws into these, we blit each area to the panel.
+// 40 lines is a compromise between blit count and PSRAM footprint (~100 KB each).
+constexpr int16_t kBufferLines = 40;
+constexpr size_t kBufferPixels = static_cast<size_t>(settings::screen_w) * kBufferLines;
+constexpr size_t kBufferBytes = kBufferPixels * sizeof(uint16_t);
+
+lv_display_t* g_display = nullptr;
+lv_indev_t* g_touch = nullptr;
+uint16_t* g_buf1 = nullptr;
+uint16_t* g_buf2 = nullptr;
+
+void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+  const int32_t w = area->x2 - area->x1 + 1;
+  const int32_t h = area->y2 - area->y1 + 1;
+  // LVGL renders native-endian RGB565, which matches lgfx::rgb565_t. If colours
+  // come out inverted on hardware, this is the line to swap for swap565_t.
+  M5.Display.pushImage(area->x1, area->y1, w, h,
+                       reinterpret_cast<const lgfx::rgb565_t*>(px_map));
+  lv_display_flush_ready(disp);
 }
 
-void update() {
-  const uint32_t now = millis();
-  if (static_cast<uint32_t>(now - last_sample) < 16) return;
-  last_sample = now;
-  // One owner reads the controller. getTouch applies the display rotation.
-  // Unlike gesture events, these coordinates also follow slow movement/holds.
-  m5gfx::touch_point_t point;
-  const bool pressed = M5.Display.getTouch(&point, 1) != 0;
-  ++sample_count;
-  if (pressed) {
-    last_contact = now;
-    contact_active = true;
-    if (!reset_latched && inside(point.x, point.y, (screen_width - target_width) / 2,
-                                screen_height - margin - target_height,
-                                target_width, target_height)) {
-      reset_latched = true;
-      begin();
-      return;
-    }
-    // Targets are idempotent: accept any valid sample inside, not only a
-    // one-frame touch-begin event. Reset stays latched until finger release.
-    for (auto& target : targets) {
-      if (!target.passed && inside(point.x, point.y, target.x, target.y,
-                                  target_width, target_height)) {
-        target.passed = true;
-        draw_target(target);
-        draw_progress();
-      }
-    }
-  } else if (contact_active && static_cast<uint32_t>(now - last_contact) >= 64) {
-    contact_active = false;
-    reset_latched = false;
-    clear_marker();
-  }
-  // Keep this counter updating even with no contact, to expose a stalled loop.
-  if (static_cast<uint32_t>(now - last_refresh) < 50) return;
-  last_refresh = now;
-  M5.Display.fillRect(24, 250, screen_width - 48, 20, TFT_BLACK);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.setCursor(32, 250);
-  M5.Display.printf("Samples: %lu  Contact: %s", static_cast<unsigned long>(sample_count),
-                    pressed ? "yes" : "no");
-  if (pressed) M5.Display.printf("  x=%d y=%d", point.x, point.y);
-  M5.Display.setTextSize(3);
-  if (pressed) {
-    clear_marker();
-    if (inside(point.x, point.y, 38, 284, screen_width - 76, screen_height - 468)) {
-      marker_x = point.x;
-      marker_y = point.y;
-      marker_visible = true;
-      M5.Display.fillCircle(marker_x, marker_y, 10, TFT_CYAN);
-    }
+void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
+  // M5.update() runs in the main loop; this only reads the latest sample.
+  if (M5.Touch.getCount() > 0) {
+    const auto t = M5.Touch.getDetail(0);
+    data->point.x = t.x;
+    data->point.y = t.y;
+    data->state = LV_INDEV_STATE_PRESSED;
+  } else {
+    data->state = LV_INDEV_STATE_RELEASED;
   }
 }
+
+uint32_t tick_cb() { return millis(); }
+
+void log_cb(lv_log_level_t, const char* buf) {
+  Serial.print("[lvgl] ");
+  Serial.println(buf);
 }
+
+}  // namespace
+
+bool begin() {
+  M5.Display.setRotation(settings::display_rotation);
+  M5.Display.setBrightness(180);
+  M5.Display.fillScreen(TFT_BLACK);
+
+  lv_init();
+  lv_tick_set_cb(tick_cb);
+  lv_log_register_print_cb(log_cb);
+
+  // Draw buffers go to PSRAM; internal RAM is reserved for the network and
+  // decoder work that arrives in later milestones.
+  g_buf1 = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_SPIRAM));
+  g_buf2 = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_SPIRAM));
+  if (!g_buf1 || !g_buf2) {
+    Serial.printf("[ui] draw buffer allocation failed (%u bytes each)\n",
+                  static_cast<unsigned>(kBufferBytes));
+    return false;
+  }
+
+  g_display = lv_display_create(settings::screen_w, settings::screen_h);
+  if (!g_display) return false;
+  lv_display_set_flush_cb(g_display, flush_cb);
+  lv_display_set_buffers(g_display, g_buf1, g_buf2, kBufferBytes,
+                         LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+  g_touch = lv_indev_create();
+  lv_indev_set_type(g_touch, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(g_touch, touch_read_cb);
+
+  Serial.printf("[ui] LVGL %d.%d.%d ready, %ux%u\n", LVGL_VERSION_MAJOR,
+                LVGL_VERSION_MINOR, LVGL_VERSION_PATCH,
+                static_cast<unsigned>(settings::screen_w),
+                static_cast<unsigned>(settings::screen_h));
+  return true;
+}
+
+void update() { lv_timer_handler(); }
+
+}  // namespace display_ui

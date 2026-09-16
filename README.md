@@ -1,17 +1,25 @@
 # Tab5 beer terminal
 
-Milestone 2: display and touchscreen verification, rotated 180 degrees from the
-original landscape orientation. Milestone 1 upload worked on the user's device.
-There is no scanner, purchasing UI, networking, backend deployment or sleep implementation yet.
-See [the hardware audit](docs/hardware-audit.md) for the camera blocker and
-[the architecture proposal](docs/architecture.md) for subsequent milestones.
+Milestone 3: the LVGL interface and the explicit state machine, driven by a mock
+catalog of eight beers. Milestones 1 and 2 are confirmed working on the device.
+There is no camera, networking, backend deployment, offline queue or sleep
+implementation yet.
+
+The Tab5 camera is not reachable from the Arduino framework — verified by
+compilation, see [the hardware audit](docs/hardware-audit.md). Barcode capture
+therefore moves to a phone management page, and the terminal itself is
+catalog-first: residents tap a product tile rather than scanning. See
+[the architecture proposal](docs/architecture.md) and
+[milestone 3](docs/milestone-3.md).
 
 ## Build
 
 ### Arduino IDE
 
 Open `firmware/beer_terminal/beer_terminal.ino`. Install M5Stack board package
-3.3.9, M5Unified 0.2.22 and M5GFX 0.2.29 using the IDE's Boards/Library Managers.
+3.3.9, M5Unified 0.2.22, M5GFX 0.2.29 and lvgl 9.2.2 using the IDE's
+Boards/Library Managers. LVGL reads the sketch-local `lv_conf.h`; the
+`build_opt.h` beside the sketch supplies `-DLV_CONF_INCLUDE_SIMPLE` for that.
 Select M5Tab5 and the connected port under Tools; enable PSRAM and USB CDC On
 Boot, select Hardware CDC and JTAG for USB Mode, and select the chip variant
 matching the device. Click Verify or Upload. Serial Monitor uses 115200 baud.
@@ -21,7 +29,7 @@ no custom language flags are needed in Arduino IDE.
 ### Arduino CLI
 
 Tested on Apple Silicon macOS with Arduino CLI **1.1.1**, official
-**m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**.
+**m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**, **lvgl@9.2.2**.
 Application and library compilation explicitly uses GNU C++17. Core prebuilt
 ESP-IDF libraries retain their upstream compilation settings.
 
@@ -57,6 +65,25 @@ Before uploading, determine chip revision from the device/flash tool. For silico
 v3.00 or newer, build with `CHIP_VARIANT=postv3 ./tools/build.sh` and use the matching
 variant when uploading. Do not force-flash a binary rejected for chip revision.
 No serial port is stored in configuration.
+
+## Host checks
+
+`./tools/test-layout.sh` builds and runs the catalog grid geometry on the Mac —
+no Tab5 and no Arduino toolchain needed. It asserts the layout for one to eight
+products, that tiles stay inside the margins and clear of the header and footer,
+and that a partial last row is centred.
+
+## Physical verification — milestone 3
+
+Upload as below, then walk the procedure in
+[docs/milestone-3.md](docs/milestone-3.md): the eight-tile catalog, a purchase
+through to the green confirmation, the cancel paths, the ad hoc product screen,
+and the simulated-failure retry reached by long-pressing the header. Serial at
+115200 prints every transition as `[state] FROM -> TO`.
+
+The open hardware questions are colour order in the flush callback, touch
+accuracy against LVGL hit testing, redraw latency, and whether a 300 x 268 tile
+is genuinely thumb-sized in front of a fridge.
 
 ## Physical verification — milestone 2
 
@@ -103,7 +130,9 @@ The firmware stays awake: battery current and wake latency have not been measure
 
 ## Files added
 
-- `firmware/beer_terminal/`: minimal sketch, centralized settings, secrets example.
+- `firmware/beer_terminal/`: sketch, state machine, catalog, LVGL port and screens,
+  `lv_conf.h`, centralized settings, secrets example.
+- `tests/`, `tools/test-layout.sh`: host test for the adaptive catalog grid.
 - `arduino-cli.yaml`, `tools/`: official package URL, pinned setup, build and example checks.
 - `docs/`: hardware/API findings, proposed architecture, compilation evidence.
 - `backend/README.md`: reserved backend scope for milestone 8.

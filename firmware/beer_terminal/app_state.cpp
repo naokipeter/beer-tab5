@@ -1,0 +1,191 @@
+#include "app_state.h"
+#include <stdio.h>
+#include <string.h>
+#include <Arduino.h>
+#include "product_catalog.h"
+
+namespace app_state {
+namespace {
+
+State g_state = State::Sleeping;
+Context g_ctx = {};
+ChangeHandler g_on_change = nullptr;
+
+// Deadline for the current timed state, or 0 when the state is not timed.
+uint32_t g_deadline = 0;
+// Set when a submission is deliberately failed, so Retry can succeed instead.
+bool g_fail_next_submit = false;
+
+void enter(State next) {
+  if (next == g_state) return;
+  const State previous = g_state;
+  g_state = next;
+  g_deadline = 0;
+
+  switch (next) {
+    case State::Submitting:
+      g_deadline = millis() + settings::mock_submit_ms;
+      break;
+    case State::Success:
+      g_deadline = millis() + settings::success_dwell_ms;
+      break;
+    default:
+      break;
+  }
+
+  Serial.printf("[state] %s -> %s\n", state_name(previous), state_name(next));
+  if (g_on_change) g_on_change(previous, next);
+}
+
+void reset_context() {
+  g_ctx = Context{};
+  g_ctx.product_index = -1;
+  g_ctx.resident_index = -1;
+}
+
+void make_transaction_id() {
+  // Generated once per purchase attempt and reused across retries, so a
+  // duplicate submission is recognisable by the backend in milestone 8.
+  snprintf(g_ctx.transaction_id, sizeof(g_ctx.transaction_id), "%s-%08lx-%04x",
+           settings::device_id, static_cast<unsigned long>(millis()),
+           static_cast<unsigned>(esp_random() & 0xFFFF));
+}
+
+}  // namespace
+
+void begin(ChangeHandler on_change) {
+  g_on_change = on_change;
+  reset_context();
+  g_state = State::Sleeping;
+  // Milestone 3 has no sleep implementation yet, so come straight up.
+  enter(State::Waking);
+  enter(State::SelectingProduct);
+}
+
+State state() { return g_state; }
+Context& context() { return g_ctx; }
+
+const char* state_name(State s) {
+  switch (s) {
+    case State::Sleeping:         return "SLEEPING";
+    case State::Waking:           return "WAKING";
+    case State::SelectingProduct: return "SELECTING_PRODUCT";
+    case State::LookingUp:        return "LOOKING_UP";
+    case State::ProductFound:     return "PRODUCT_FOUND";
+    case State::NewProduct:       return "NEW_PRODUCT";
+    case State::SelectingUser:    return "SELECTING_USER";
+    case State::Submitting:       return "SUBMITTING";
+    case State::Success:          return "SUCCESS";
+    case State::Error:            return "ERROR";
+    case State::Admin:            return "ADMIN";
+  }
+  return "?";
+}
+
+void select_product(uint8_t catalog_index) {
+  const product_catalog::Product* p = product_catalog::at(catalog_index);
+  if (!p) return;
+  g_ctx.product_index = static_cast<int8_t>(catalog_index);
+  snprintf(g_ctx.product_name, sizeof(g_ctx.product_name), "%s", p->name);
+  snprintf(g_ctx.barcode, sizeof(g_ctx.barcode), "%s", p->barcode);
+  g_ctx.price_rappen = p->price_rappen;
+  g_ctx.free_item = p->free_item;
+}
+
+void set_ad_hoc_product(const char* name, int32_t price_rappen, bool free_item) {
+  g_ctx.product_index = -1;
+  snprintf(g_ctx.product_name, sizeof(g_ctx.product_name), "%s", name);
+  g_ctx.barcode[0] = '\0';
+  g_ctx.price_rappen = price_rappen;
+  g_ctx.free_item = free_item;
+}
+
+void simulate_next_failure(bool on) { g_fail_next_submit = on; }
+bool failure_simulated() { return g_fail_next_submit; }
+
+void dispatch(Event e) {
+  switch (g_state) {
+    case State::Sleeping:
+      if (e == Event::Wake) enter(State::Waking);
+      break;
+
+    case State::Waking:
+      enter(State::SelectingProduct);
+      break;
+
+    case State::SelectingProduct:
+      if (e == Event::ProductSelected)      enter(State::SelectingUser);
+      else if (e == Event::NotListed)       enter(State::NewProduct);
+      else if (e == Event::AdminRequested)  enter(State::Admin);
+      else if (e == Event::Sleep)           enter(State::Sleeping);
+      break;
+
+    case State::LookingUp:
+      if (e == Event::ProductSelected)  enter(State::ProductFound);
+      else if (e == Event::SubmitFailed) enter(State::Error);
+      else if (e == Event::Cancel)      enter(State::SelectingProduct);
+      break;
+
+    case State::ProductFound:
+      if (e == Event::ProductSelected) enter(State::SelectingUser);
+      else if (e == Event::Cancel)     enter(State::SelectingProduct);
+      break;
+
+    case State::NewProduct:
+      if (e == Event::NewProductReady) enter(State::SelectingUser);
+      else if (e == Event::Cancel)     { reset_context(); enter(State::SelectingProduct); }
+      break;
+
+    case State::SelectingUser:
+      if (e == Event::ResidentSelected) { make_transaction_id(); enter(State::Submitting); }
+      else if (e == Event::Cancel)      { reset_context(); enter(State::SelectingProduct); }
+      break;
+
+    case State::Submitting:
+      if (e == Event::SubmitSucceeded) enter(State::Success);
+      else if (e == Event::SubmitFailed) enter(State::Error);
+      break;
+
+    case State::Success:
+      if (e == Event::Dwell || e == Event::Cancel) {
+        reset_context();
+        enter(State::SelectingProduct);
+      }
+      break;
+
+    case State::Error:
+      // The transaction ID survives a retry, so a submission that actually
+      // landed before the error cannot be recorded twice.
+      if (e == Event::Retry)       enter(State::Submitting);
+      else if (e == Event::Cancel) { reset_context(); enter(State::SelectingProduct); }
+      break;
+
+    case State::Admin:
+      if (e == Event::AdminDone || e == Event::Cancel) enter(State::SelectingProduct);
+      break;
+  }
+}
+
+void update(uint32_t now_ms) {
+  if (g_deadline == 0 || static_cast<int32_t>(now_ms - g_deadline) < 0) return;
+  g_deadline = 0;
+
+  switch (g_state) {
+    case State::Submitting:
+      if (g_fail_next_submit) {
+        g_fail_next_submit = false;
+        snprintf(g_ctx.message, sizeof(g_ctx.message), "Keine Verbindung zum Server");
+        dispatch(Event::SubmitFailed);
+      } else {
+        dispatch(Event::SubmitSucceeded);
+      }
+      break;
+    case State::Success:
+      dispatch(Event::Dwell);
+      break;
+    default:
+      break;
+  }
+}
+
+}  // namespace app_state
