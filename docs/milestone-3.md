@@ -48,12 +48,31 @@ that an empty catalog does not produce degenerate geometry.
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
 | `./tools/build.sh` (C++17) | PASS | 972,760 bytes | 30,240 bytes |
-| Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 972,796 bytes | not captured |
+| Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
 Static RAM excludes the two 1280 x 40 PSRAM draw buffers (102,400 bytes each),
 LVGL's runtime heap and stacks. No inference about final memory fit should be
 drawn from these figures.
+
+## Arduino IDE library folder
+
+Arduino IDE reads `~/Documents/Arduino/libraries`; `tools/build.sh` reads the
+project-local `.arduino/user/libraries`. They are independent, and the sketchbook
+held **lvgl 8.3.2**, whose API differs from 9.2.2 across most of this code.
+Install lvgl 9.2.2 through the IDE Library Manager as well; `ui_lvgl.h` reports
+the mismatch explicitly if that is missed.
+
+Two things were checked rather than assumed, by pointing CLI builds at a
+reproduction of the IDE's layout:
+
+- No sketch in the sketchbook uses LVGL — the only matches are inside the
+  library's own `examples/`. Upgrading it breaks nothing else there.
+- A stale `libraries/lv_conf.h` for v8.3.2 sits beside the lvgl folder, the
+  location LVGL 8 expected. It is **not** on the include path: builds with and
+  without it produce byte-identical firmware (976,484 bytes), and the sketch-local
+  `lv_conf.h` wins through `-DLV_CONF_INCLUDE_SIMPLE`. It can be deleted as
+  tidy-up, but it changes nothing.
 
 ## Verification procedure
 
