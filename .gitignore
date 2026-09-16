@@ -1,0 +1,6 @@
+.arduino/
+build/
+.DS_Store
+secrets.h
+wifi_secrets.h
+*.local.*
