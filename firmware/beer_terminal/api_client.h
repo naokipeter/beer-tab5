@@ -32,6 +32,15 @@ bool begin();
 // the body does not fit; error() says which.
 bool post(const char* body, size_t len);
 
+// Queues a GET whose body is streamed straight to a file rather than into the
+// response buffer, for product photos that are larger than it. The URL must be
+// https on a host the protocol layer allows. Uses the same single slot, so a
+// download can never overlap a purchase.
+bool fetch_to_file(const char* url, const char* path);
+
+// Size of the file the last fetch_to_file wrote, valid while status() is Done.
+size_t fetched_bytes();
+
 Status status();
 Error error();
 const char* error_text();
