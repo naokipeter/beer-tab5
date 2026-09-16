@@ -1,7 +1,7 @@
 #include "display_ui.h"
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
-#include <lvgl.h>
+#include "ui_lvgl.h"
 #include "settings.h"
 
 namespace display_ui {

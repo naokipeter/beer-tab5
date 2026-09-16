@@ -1,5 +1,5 @@
 #include "ui_screens.h"
-#include <lvgl.h>
+#include "ui_lvgl.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

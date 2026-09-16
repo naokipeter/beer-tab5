@@ -7,8 +7,12 @@ No existing Tab5 project was found in its filename/directory scan. A separate
 `tab5-beer-terminal` repository was created. No applicable parent AGENTS.md was found.
 Git and Homebrew are installed; `arduino-cli` is absent from PATH, but Arduino IDE
 bundles CLI 1.1.1. Arduino15 contains the official M5Stack 3.3.9 core/toolchain and
-cached M5Unified 0.2.22 / M5GFX 0.2.29 ZIPs. The Documents/Arduino directory could
-not be inspected because macOS denied access; no claim is made about its contents.
+cached M5Unified 0.2.22 / M5GFX 0.2.29 ZIPs. The Documents/Arduino sketchbook was
+initially unreadable under macOS permissions; it has since been inspected and
+contains **lvgl 8.3.2**, which Arduino IDE uses in preference to the project-local
+9.2.2 that the CLI build uses. The two library folders are independent. Since
+LVGL 8 and 9 differ across most of the API, `firmware/beer_terminal/ui_lvgl.h`
+asserts the major version so the mismatch reports itself directly.
 
 The cached official libraries contain display and touch examples. They were
 extracted unchanged into the project's ignored library directory. M5Unified's

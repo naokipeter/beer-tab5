@@ -15,6 +15,7 @@ sleep implementation yet; those stay in their later milestones.
 | `product_catalog.h/.cpp` | Fixed-capacity catalog (max 8), integer rappen, price formatting, and the deterministic no-photo tile colour. |
 | `display_ui.h/.cpp` | LVGL port: PSRAM draw buffers, flush through `M5.Display.pushImage`, touch through `M5.Touch`, `millis` as the tick source. |
 | `ui_screens.h/.cpp` | One builder per state. Screens are rebuilt on transition only. |
+| `ui_lvgl.h` | Includes LVGL and asserts major version 9, so an LVGL 8 sketchbook copy reports itself instead of producing dozens of rename errors. |
 | `tests/test_catalog_layout.cpp`, `tools/test-layout.sh` | Host test for the grid rule. |
 
 `settings.h` gained the screen metrics, the resident list, the theme and the

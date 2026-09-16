@@ -20,6 +20,15 @@ Open `firmware/beer_terminal/beer_terminal.ino`. Install M5Stack board package
 3.3.9, M5Unified 0.2.22, M5GFX 0.2.29 and lvgl 9.2.2 using the IDE's
 Boards/Library Managers. LVGL reads the sketch-local `lv_conf.h`; the
 `build_opt.h` beside the sketch supplies `-DLV_CONF_INCLUDE_SIMPLE` for that.
+
+**The IDE and the CLI use different library folders.** Arduino IDE reads your
+sketchbook (`~/Documents/Arduino/libraries`), while `tools/build.sh` reads the
+project-local `.arduino/user/libraries`. Installing or upgrading a library for
+one does not affect the other. LVGL in particular renamed most of its API
+between 8 and 9, so an older sketchbook copy produces dozens of
+"not declared in this scope" errors; `ui_lvgl.h` turns that into a single
+explicit message. In the IDE, open Library Manager, find lvgl, and select
+version 9.2.2 from the version dropdown.
 Select M5Tab5 and the connected port under Tools; enable PSRAM and USB CDC On
 Boot, select Hardware CDC and JTAG for USB Mode, and select the chip variant
 matching the device. Click Verify or Upload. Serial Monitor uses 115200 baud.
