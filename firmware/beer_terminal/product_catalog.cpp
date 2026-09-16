@@ -38,14 +38,14 @@ void begin() {
   // real values arrive with the backend catalog in milestone 6. Two active
   // products match the usual stock; the rest start archived so the restore flow
   // has something to show.
-  add("7610807000019", "Feldschlosschen Original", 180, false, "", true);
-  add("7610827000024", "Appenzeller Quollfrisch", 220, false, "", true);
-  add("7610900000038", "Calanda Brau", 190, false, "", false);
+  add("7610807000019", "Feldschlösschen Original", 180, false, "", true);
+  add("7610827000024", "Appenzeller Quöllfrisch", 220, false, "", true);
+  add("7610900000038", "Calanda Bräu", 190, false, "", false);
   add("7613100000045", "Chopfab Draft", 260, false, "", false);
   add("7610827000055", "Appenzeller Naturperle", 240, false, "", false);
   add("7610013000062", "Boxer Old", 170, false, "", false);
   add("7610700000079", "Valaisanne Pale Ale", 280, false, "", false);
-  add("7613300000086", "Turbinenbrau Gassenhauer", 0, true, "", false);
+  add("7613300000086", "Turbinenbräu Gassenhauer", 0, true, "", false);
 }
 
 uint8_t active_count() {

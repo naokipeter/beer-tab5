@@ -75,6 +75,13 @@ v3.00 or newer, build with `CHIP_VARIANT=postv3 ./tools/build.sh` and use the ma
 variant when uploading. Do not force-flash a binary rejected for chip revision.
 No serial port is stored in configuration.
 
+## Fonts
+
+The UI draws with Montserrat subsets that include German and Swiss-French
+letters; LVGL's built-in fonts are ASCII-only. They are committed as
+`firmware/beer_terminal/font_de_*.c`. Regenerate with `./tools/generate-fonts.sh`
+after changing the glyph set — it needs Node and the installed lvgl library.
+
 ## Host checks
 
 `./tools/test-layout.sh` builds and runs the catalog grid geometry on the Mac —

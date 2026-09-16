@@ -8,6 +8,8 @@
 #include "purchase_log.h"
 #include "resident_directory.h"
 #include "settings.h"
+#include "ui_fonts.h"
+#include "ui_keyboard.h"
 
 namespace ui_screens {
 namespace {
@@ -27,10 +29,10 @@ lv_obj_t* g_keyboard = nullptr;
 lv_color_t col(uint32_t rgb) { return lv_color_hex(rgb); }
 
 const lv_font_t* font_for(int16_t px) {
-  if (px >= 44) return &lv_font_montserrat_48;
-  if (px >= 30) return &lv_font_montserrat_32;
-  if (px >= 24) return &lv_font_montserrat_28;
-  return &lv_font_montserrat_20;
+  if (px >= 44) return &font_de_48;
+  if (px >= 30) return &font_de_32;
+  if (px >= 24) return &font_de_28;
+  return &font_de_20;
 }
 
 lv_obj_t* make_panel(lv_obj_t* parent, int16_t x, int16_t y, int16_t w, int16_t h,
@@ -188,7 +190,7 @@ lv_obj_t* build_root() {
 void build_header(lv_obj_t* scr, const char* title, bool admin_gesture) {
   lv_obj_t* bar = make_panel(scr, 0, 0, settings::screen_w, settings::header_h,
                              settings::theme::bg);
-  lv_obj_t* l = make_label(bar, title, settings::theme::text, &lv_font_montserrat_28);
+  lv_obj_t* l = make_label(bar, title, settings::theme::text, &font_de_28);
   lv_obj_align(l, LV_ALIGN_LEFT_MID, settings::grid_margin, 0);
   if (admin_gesture) {
     lv_obj_add_flag(bar, LV_OBJ_FLAG_CLICKABLE);
@@ -282,8 +284,8 @@ void build_catalog() {
 
   const uint8_t n = product_catalog::active_count();
   if (n == 0) {
-    lv_obj_t* l = make_label(scr, "Kein Bier im Kuhlschrank",
-                             settings::theme::text_muted, &lv_font_montserrat_32);
+    lv_obj_t* l = make_label(scr, "Kein Bier im Kühlschrank",
+                             settings::theme::text_muted, &font_de_32);
     lv_obj_center(l);
   } else {
     const Bounds b = catalog_layout::catalog_bounds();
@@ -316,7 +318,7 @@ void build_resident() {
   build_header(scr, title, false);
 
   lv_obj_t* prompt = make_label(scr, "Wer trinkt?", settings::theme::text_muted,
-                                &lv_font_montserrat_20);
+                                &font_de_20);
   lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h);
 
   // Residents plus one archive button share the same tested grid rule, so the
@@ -341,7 +343,7 @@ void build_resident() {
     }
   }
 
-  build_footer_single(scr, "Zuruck", Event::Cancel, settings::theme::surface_alt,
+  build_footer_single(scr, "Zurück", Event::Cancel, settings::theme::surface_alt,
                       settings::theme::text_muted);
 }
 
@@ -352,10 +354,10 @@ void build_archived() {
   const bool room = product_catalog::can_restore();
   lv_obj_t* prompt = make_label(
       scr,
-      room ? "Zuruck in den Kuhlschrank, oder neu anlegen?"
-           : "Kuhlschrank voll - zuerst ein Bier archivieren",
+      room ? "Zurück in den Kühlschrank, oder neu anlegen?"
+           : "Kühlschrank voll – zuerst ein Bier archivieren",
       room ? settings::theme::text_muted : settings::theme::danger,
-      &lv_font_montserrat_20);
+      &font_de_20);
   lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h);
 
   const uint8_t n = product_catalog::archived_count();
@@ -385,16 +387,16 @@ void build_confirm_archive() {
 
   char line[96];
   snprintf(line, sizeof(line), "%s", p ? p->name : app_state::context().product_name);
-  lv_obj_t* name = make_label(scr, line, settings::theme::text, &lv_font_montserrat_48);
+  lv_obj_t* name = make_label(scr, line, settings::theme::text, &font_de_48);
   lv_obj_align(name, LV_ALIGN_CENTER, 0, -60);
 
-  lv_obj_t* q = make_label(scr, "aus dem Kuhlschrank nehmen?", settings::theme::text,
-                           &lv_font_montserrat_32);
+  lv_obj_t* q = make_label(scr, "aus dem Kühlschrank nehmen?", settings::theme::text,
+                           &font_de_32);
   lv_obj_align(q, LV_ALIGN_CENTER, 0, 0);
 
   lv_obj_t* hint = make_label(
-      scr, "Bleibt gespeichert und kann uber \"Nicht gelistet\" zuruckgeholt werden.",
-      settings::theme::text_muted, &lv_font_montserrat_20);
+      scr, "Bleibt gespeichert und kann über „Nicht gelistet“ zurückgeholt werden.",
+      settings::theme::text_muted, &font_de_20);
   lv_obj_align(hint, LV_ALIGN_CENTER, 0, 50);
 
   build_footer_pair(scr, "Abbrechen", on_event_button,
@@ -407,7 +409,7 @@ void build_confirm_archive() {
 
 void build_new_product() {
   lv_obj_t* scr = build_root();
-  build_header(scr, "Neues Getrank", false);
+  build_header(scr, "Neues Getränk", false);
 
   g_entry_rappen = 0;
   g_entry_free = false;
@@ -416,16 +418,16 @@ void build_new_product() {
   lv_obj_set_pos(g_entry_name, settings::grid_margin, settings::header_h + 8);
   lv_obj_set_size(g_entry_name, 620, 68);
   lv_textarea_set_one_line(g_entry_name, true);
-  lv_textarea_set_placeholder_text(g_entry_name, "Name des Getranks");
+  lv_textarea_set_placeholder_text(g_entry_name, "Name des Getränks");
   lv_textarea_set_max_length(g_entry_name, 38);
-  lv_obj_set_style_text_font(g_entry_name, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(g_entry_name, &font_de_28, 0);
   lv_obj_set_style_bg_color(g_entry_name, col(settings::theme::surface), 0);
   lv_obj_set_style_text_color(g_entry_name, col(settings::theme::text), 0);
   lv_obj_set_style_border_width(g_entry_name, 0, 0);
   lv_obj_add_event_cb(g_entry_name, on_name_focus, LV_EVENT_ALL, nullptr);
 
   g_entry_price_label = make_label(scr, "CHF 0.00", settings::theme::accent,
-                                   &lv_font_montserrat_48);
+                                   &font_de_48);
   lv_obj_set_pos(g_entry_price_label, settings::grid_margin, settings::header_h + 96);
 
   make_button(scr, "Gratis", settings::grid_margin, settings::header_h + 170, 300, 80,
@@ -441,7 +443,7 @@ void build_new_product() {
   lv_obj_set_size(pad, 584, 400);
   lv_obj_set_style_bg_opa(pad, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(pad, 0, 0);
-  lv_obj_set_style_text_font(pad, &lv_font_montserrat_32, LV_PART_ITEMS);
+  lv_obj_set_style_text_font(pad, &font_de_32, LV_PART_ITEMS);
   lv_obj_set_style_bg_color(pad, col(settings::theme::surface), LV_PART_ITEMS);
   lv_obj_set_style_text_color(pad, col(settings::theme::text), LV_PART_ITEMS);
   lv_obj_set_style_radius(pad, 6, LV_PART_ITEMS);
@@ -454,6 +456,7 @@ void build_new_product() {
                     0x12120F);
 
   g_keyboard = lv_keyboard_create(scr);
+  ui_keyboard::apply_german_layout(g_keyboard);
   lv_obj_set_size(g_keyboard, settings::screen_w, 300);
   lv_obj_align(g_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_obj_add_flag(g_keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -468,7 +471,7 @@ void build_submitting() {
   lv_obj_align(sp, LV_ALIGN_CENTER, 0, -60);
   lv_obj_set_style_arc_color(sp, col(settings::theme::accent), LV_PART_INDICATOR);
   lv_obj_t* l = make_label(scr, "Wird gespeichert...", settings::theme::text,
-                           &lv_font_montserrat_32);
+                           &font_de_32);
   lv_obj_align(l, LV_ALIGN_CENTER, 0, 60);
 }
 
@@ -484,25 +487,25 @@ void build_success() {
   char line[128];
   snprintf(line, sizeof(line), "%s: %s", r ? r->name : "?", ctx.product_name);
 
-  lv_obj_t* big = make_label(scr, "Gebucht", 0xFFFFFF, &lv_font_montserrat_48);
+  lv_obj_t* big = make_label(scr, "Gebucht", 0xFFFFFF, &font_de_48);
   lv_obj_align(big, LV_ALIGN_CENTER, 0, -90);
-  lv_obj_t* l = make_label(scr, line, 0xFFFFFF, &lv_font_montserrat_32);
+  lv_obj_t* l = make_label(scr, line, 0xFFFFFF, &font_de_32);
   lv_obj_align(l, LV_ALIGN_CENTER, 0, -20);
 
   // Offered, not forced: ignoring it returns to the catalog on its own.
-  make_button(scr, "Ubersicht anzeigen", (settings::screen_w - 520) / 2,
+  make_button(scr, "Übersicht anzeigen", (settings::screen_w - 520) / 2,
               settings::screen_h / 2 + 60, 520, 84, 0xFFFFFF, settings::theme::ok,
               on_event_button, as_ud(static_cast<uintptr_t>(Event::ShowSummary)));
 }
 
 void build_summary() {
   lv_obj_t* scr = build_root();
-  build_header(scr, "Ubersicht", false);
+  build_header(scr, "Übersicht", false);
 
   const uint8_t n = purchase_log::count();
   if (n == 0) {
     lv_obj_t* l = make_label(scr, "Noch nichts erfasst", settings::theme::text_muted,
-                             &lv_font_montserrat_32);
+                             &font_de_32);
     lv_obj_center(l);
   } else {
     const int16_t top = settings::header_h + 12;
@@ -510,13 +513,13 @@ void build_summary() {
     const int16_t w = settings::screen_w - 2 * settings::grid_margin;
 
     lv_obj_t* h1 = make_label(scr, "Name", settings::theme::text_muted,
-                              &lv_font_montserrat_20);
+                              &font_de_20);
     lv_obj_set_pos(h1, settings::grid_margin + 16, top);
     lv_obj_t* h2 = make_label(scr, "Anzahl", settings::theme::text_muted,
-                              &lv_font_montserrat_20);
+                              &font_de_20);
     lv_obj_set_pos(h2, settings::grid_margin + w - 420, top);
     lv_obj_t* h3 = make_label(scr, "Total", settings::theme::text_muted,
-                              &lv_font_montserrat_20);
+                              &font_de_20);
     lv_obj_set_pos(h3, settings::grid_margin + w - 230, top);
 
     for (uint8_t i = 0; i < n; ++i) {
@@ -525,17 +528,17 @@ void build_summary() {
       lv_obj_t* row = make_panel(scr, settings::grid_margin, y, w, row_h - 8,
                                  settings::theme::surface);
       lv_obj_t* nm = make_label(row, t->resident_name, settings::theme::text,
-                                &lv_font_montserrat_28);
+                                &font_de_28);
       lv_obj_align(nm, LV_ALIGN_LEFT_MID, 16, 0);
 
       char cnt[16];
       snprintf(cnt, sizeof(cnt), "%u", static_cast<unsigned>(t->drinks));
-      lv_obj_t* cl = make_label(row, cnt, settings::theme::text, &lv_font_montserrat_28);
+      lv_obj_t* cl = make_label(row, cnt, settings::theme::text, &font_de_28);
       lv_obj_align(cl, LV_ALIGN_LEFT_MID, w - 420, 0);
 
       char sum[32];
       product_catalog::format_rappen(t->total_rappen, false, sum, sizeof(sum));
-      lv_obj_t* sl = make_label(row, sum, settings::theme::accent, &lv_font_montserrat_28);
+      lv_obj_t* sl = make_label(row, sum, settings::theme::accent, &font_de_28);
       lv_obj_align(sl, LV_ALIGN_LEFT_MID, w - 230, 0);
     }
 
@@ -543,15 +546,15 @@ void build_summary() {
     char amount[32];
     product_catalog::format_rappen(purchase_log::total_rappen(), false, amount,
                                    sizeof(amount));
-    snprintf(total, sizeof(total), "%u Getranke, %s",
+    snprintf(total, sizeof(total), "%u Getränke, %s",
              static_cast<unsigned>(purchase_log::total_drinks()), amount);
     lv_obj_t* tl = make_label(scr, total, settings::theme::text_muted,
-                              &lv_font_montserrat_20);
+                              &font_de_20);
     lv_obj_align(tl, LV_ALIGN_BOTTOM_LEFT, settings::grid_margin,
                  -settings::footer_h - 4);
   }
 
-  build_footer_single(scr, "Zuruck", Event::Cancel, settings::theme::surface_alt,
+  build_footer_single(scr, "Zurück", Event::Cancel, settings::theme::surface_alt,
                       settings::theme::text);
 }
 
@@ -561,11 +564,11 @@ void build_error() {
   build_header(scr, "Fehler", false);
 
   lv_obj_t* l = make_label(scr, ctx.message[0] ? ctx.message : "Unbekannter Fehler",
-                           settings::theme::text, &lv_font_montserrat_32);
+                           settings::theme::text, &font_de_32);
   lv_obj_align(l, LV_ALIGN_CENTER, 0, -40);
 
   lv_obj_t* hint = make_label(scr, "Der Eintrag wird nicht doppelt erfasst.",
-                              settings::theme::text_muted, &lv_font_montserrat_20);
+                              settings::theme::text_muted, &font_de_20);
   lv_obj_align(hint, LV_ALIGN_CENTER, 0, 10);
 
   build_footer_pair(scr, "Abbrechen", on_event_button,
@@ -587,16 +590,16 @@ void build_admin() {
     product_catalog::format_price(*p, price, sizeof(price));
     char row[80];
     snprintf(row, sizeof(row), "%-30s %10s", p->name, price);
-    lv_obj_t* l = make_label(scr, row, settings::theme::text, &lv_font_montserrat_20);
+    lv_obj_t* l = make_label(scr, row, settings::theme::text, &font_de_20);
     lv_obj_set_pos(l, settings::grid_margin, y);
     y += 30;
   }
 
   char note[96];
-  snprintf(note, sizeof(note), "%u archiviert. Preisanderung folgt in Meilenstein 11.",
+  snprintf(note, sizeof(note), "%u archiviert. Preisänderung folgt in Meilenstein 11.",
            static_cast<unsigned>(product_catalog::archived_count()));
   lv_obj_t* nl = make_label(scr, note, settings::theme::text_muted,
-                            &lv_font_montserrat_20);
+                            &font_de_20);
   lv_obj_set_pos(nl, settings::grid_margin, y + 10);
 
   char src[96];
@@ -604,11 +607,11 @@ void build_admin() {
            static_cast<unsigned>(resident_directory::count()),
            resident_directory::from_backend() ? "vom Server" : "lokale Vorgabe");
   lv_obj_t* sl = make_label(scr, src, settings::theme::text_muted,
-                            &lv_font_montserrat_20);
+                            &font_de_20);
   lv_obj_set_pos(sl, settings::grid_margin, y + 40);
 
-  lv_obj_t* sw_label = make_label(scr, "Nachsten Fehler simulieren",
-                                  settings::theme::text_muted, &lv_font_montserrat_20);
+  lv_obj_t* sw_label = make_label(scr, "Nächsten Fehler simulieren",
+                                  settings::theme::text_muted, &font_de_20);
   lv_obj_set_pos(sw_label, 700, settings::header_h + 12);
   lv_obj_t* sw = lv_switch_create(scr);
   lv_obj_set_pos(sw, 700, settings::header_h + 44);
@@ -616,14 +619,14 @@ void build_admin() {
   if (app_state::failure_simulated()) lv_obj_add_state(sw, LV_STATE_CHECKED);
   lv_obj_add_event_cb(sw, on_simulate_failure, LV_EVENT_VALUE_CHANGED, nullptr);
 
-  build_footer_single(scr, "Zuruck", Event::AdminDone, settings::theme::surface_alt,
+  build_footer_single(scr, "Zurück", Event::AdminDone, settings::theme::surface_alt,
                       settings::theme::text);
 }
 
 void build_sleeping() {
   lv_obj_t* scr = build_root();
   lv_obj_t* l = make_label(scr, "Bildschirm tippen", settings::theme::text_muted,
-                           &lv_font_montserrat_28);
+                           &font_de_28);
   lv_obj_center(l);
   lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(scr, on_event_button, LV_EVENT_CLICKED,

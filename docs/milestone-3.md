@@ -17,6 +17,8 @@ sleep implementation yet; those stay in their later milestones.
 | `purchase_log.h/.cpp` | Per-resident drink and rappen tally behind the summary screen. |
 | `display_ui.h/.cpp` | LVGL port: PSRAM draw buffers, flush through `M5.Display.pushImage`, touch through `M5.Touch`, `millis` as the tick source. |
 | `ui_screens.h/.cpp` | One builder per state. Screens are rebuilt on transition only. |
+| `font_de_*.c`, `ui_fonts.h`, `tools/generate-fonts.sh` | Montserrat subsets carrying the German and Swiss-French letters. LVGL's built-in fonts are ASCII-only, which is why umlauts were missing. |
+| `ui_keyboard.h/.cpp` | German QWERTZ layout with umlaut keys, so a name like "Feldschlösschen" can be typed as well as displayed. |
 | `ui_lvgl.h` | Includes LVGL and asserts major version 9, so an LVGL 8 sketchbook copy reports itself instead of producing dozens of rename errors. |
 | `tests/test_catalog_layout.cpp`, `tools/test-layout.sh` | Host test for the grid rule. |
 
@@ -66,13 +68,34 @@ that an empty catalog does not produce degenerate geometry.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 977,398 bytes | 36,496 bytes |
+| `./tools/build.sh` (C++17) | PASS | 905,578 bytes | 36,496 bytes |
 | Board defaults, no compiler override (Arduino IDE C++20 equivalent) | PASS | 976,484 bytes | 30,240 bytes |
 | `./tools/test-layout.sh` | PASS | all checks | host binary |
 
 Static RAM excludes the two 1280 x 40 PSRAM draw buffers (102,400 bytes each),
 LVGL's runtime heap and stacks. No inference about final memory fit should be
 drawn from these figures.
+
+## Fonts
+
+LVGL's built-in Montserrat fonts contain ASCII plus a handful of symbols and no
+Latin-1, so every umlaut rendered blank. `tools/generate-fonts.sh` builds four
+subsets with `lv_font_conv` from the Montserrat TTF that ships inside the LVGL
+library, adding `ÄÖÜäöüßÉéÈèÀàÂâÊêÎîÔôÛûÇç`, German quotes and an en dash.
+The generated `font_de_*.c` files are committed because Arduino IDE has no build
+step that could produce them.
+
+Only `font_de_20` merges the LVGL symbol glyphs, because it is `LV_FONT_DEFAULT`
+and widget internals such as the keyboard's control keys draw with it. All five
+built-in Montserrat fonts are disabled in `lv_conf.h`. That is a net **saving**:
+flash dropped from 977,398 to 905,578 bytes, since five full fonts with
+FontAwesome merged at every size cost more than four targeted subsets.
+
+Rendering the letters is only half of it — LVGL's default keyboard is a QWERTY
+map with no umlaut keys, so `ui_keyboard` installs a QWERTZ layout with
+`ü ö ä ß` on the letter rows. Its control array is length-checked against the
+key maps with `static_assert`, because LVGL indexes the two in lockstep and a
+mismatch would read past the end of the array at runtime.
 
 ## Arduino IDE library folder
 
@@ -154,8 +177,6 @@ On the Tab5, after uploading (see README for the port-independent upload command
   the offline queue arrive in milestones 7 and 9; the transaction ID and the retry
   path are already shaped for them.
 - Admin lists prices read-only. Editing, archive and restore are milestone 11.
-- Umlauts are avoided in UI strings for now; the Montserrat subsets and the text
-  encoding for German labels are worth settling before the strings multiply.
 - The host toolchain on this machine has a stale `CommandLineTools/usr/include/c++/v1`
   containing three files, which shadows the SDK's libc++ and breaks any host C++
   build. `tools/test-layout.sh` detects this and falls back to the SDK copy.
