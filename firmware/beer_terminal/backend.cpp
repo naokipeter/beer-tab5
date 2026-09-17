@@ -244,21 +244,7 @@ void update(uint32_t now_ms) {
   }
 
   const api_client::Status s = api_client::status();
-  if (s == api_client::Status::Busy) {
-    // There was no deadline once a request was in flight: a TLS handshake that
-    // hangs left the queue stuck forever with nothing on serial, which looks
-    // exactly like the device doing nothing at all.
-    if (static_cast<int32_t>(now_ms - g_deadline) >= 0) {
-      Serial.println("[backend] request timed out; abandoning it");
-      api_client::abandon();
-      if (g_op == Op::MySummary) g_my_state = MySummaryState::Unavailable;
-      const bool was_sync = g_op == Op::Sync;
-      note_send_failure(now_ms);
-      finish(Result::Unreachable, "Zeitüberschreitung");
-      if (was_sync) g_last_sync = now_ms;
-    }
-    return;
-  }
+  if (s == api_client::Status::Busy) return;
 
   if (s == api_client::Status::Failed) {
     Serial.printf("[backend] request failed: %s\n", api_client::error_text());

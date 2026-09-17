@@ -44,13 +44,4 @@ int http_code();
 // Returns to Idle. Must be called before the next post().
 void reset();
 
-// Gives up waiting for the running request. The status goes to Idle so the
-// caller can move on, but the worker may still be blocked inside TLS, so its
-// eventual result is discarded and no new request is accepted until it really
-// finishes. Without this a stuck handshake wedges the queue forever.
-void abandon();
-
-// True while the worker task still owns the request buffers.
-bool worker_busy();
-
 }  // namespace api_client
