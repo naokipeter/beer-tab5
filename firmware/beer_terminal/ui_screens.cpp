@@ -8,7 +8,6 @@
 #include "backend.h"
 #include "catalog_layout.h"
 #include "device_storage.h"
-#include "image_cache.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -405,42 +404,20 @@ void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
   }
   if (photo < 48) photo = 48;
 
-  // The photo when one is cached, otherwise the deterministic colour. Open Food
-  // Facts has no picture for a good share of Swiss beer, so the fallback is a
-  // permanent design case, not a placeholder.
+  // Photo placeholder. Product images are not fetched or rendered yet, even
+  // when image_url is populated by the sync: that needs a JPEG decoder, a
+  // download-and-cache path and decoded buffers in PSRAM. The deterministic
+  // colour is what every tile shows today, and remains the fallback for the
+  // many beers Open Food Facts has no photo for.
   lv_obj_t* img = make_panel(body, 0, 0, photo, photo,
                              product_catalog::fallback_colour(p));
   lv_obj_set_style_radius(img, 4, 0);
   if (dim) lv_obj_set_style_bg_opa(img, LV_OPA_40, 0);
 
-  const void* photo_src = image_cache::source_for(p);
-  if (photo_src) {
-    // The source belongs to image_cache and outlives this screen, so nothing
-    // here frees it and LVGL's decoded entry stays valid across rebuilds.
-    lv_image_header_t info;
-    uint32_t zoom = LV_SCALE_NONE;
-    if (lv_image_decoder_get_info(photo_src, &info) == LV_RESULT_OK) {
-      const uint32_t longest = info.w > info.h ? info.w : info.h;
-      if (longest > 0) {
-        zoom = static_cast<uint32_t>(LV_SCALE_NONE) * photo / longest;
-        if (zoom == 0) zoom = 1;
-      }
-    }
-
-    lv_obj_t* photo_obj = lv_image_create(img);
-    lv_image_set_src(photo_obj, photo_src);
-    lv_image_set_inner_align(photo_obj, LV_IMAGE_ALIGN_CENTER);
-    lv_image_set_scale(photo_obj, zoom);
-    lv_obj_set_size(photo_obj, photo, photo);
-    lv_obj_center(photo_obj);
-    lv_obj_remove_flag(photo_obj, LV_OBJ_FLAG_CLICKABLE);
-    if (dim) lv_obj_set_style_opa(photo_obj, LV_OPA_40, 0);
-  } else {
-    char initial[2] = {p.name[0], '\0'};
-    lv_obj_t* il = make_label(img, initial, 0xFFFFFF, font_for(photo / 3));
-    lv_obj_set_style_text_opa(il, LV_OPA_70, 0);
-    lv_obj_center(il);
-  }
+  char initial[2] = {p.name[0], '\0'};
+  lv_obj_t* il = make_label(img, initial, 0xFFFFFF, font_for(photo / 3));
+  lv_obj_set_style_text_opa(il, LV_OPA_70, 0);
+  lv_obj_center(il);
 
   // In a wide tile the text sits in its own centred column beside the photo.
   lv_obj_t* text_parent = body;
@@ -993,14 +970,6 @@ void build_admin() {
                                                        : settings::theme::accent,
                             &font_de_20);
   lv_obj_set_pos(ql, settings::grid_margin, y + 130);
-
-  char im[96];
-  snprintf(im, sizeof(im), "%u von %u Bildern im Cache%s",
-           static_cast<unsigned>(image_cache::cached_count()),
-           static_cast<unsigned>(product_catalog::active_count()),
-           image_cache::busy() ? ", laedt" : "");
-  lv_obj_t* il2 = make_label(scr, im, settings::theme::text_muted, &font_de_20);
-  lv_obj_set_pos(il2, settings::grid_margin, y + 160);
 
   lv_obj_t* nl2 = make_label(scr, net,
                              backend::configured() && wifi_manager::online()

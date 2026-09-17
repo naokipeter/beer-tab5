@@ -1,7 +1,6 @@
 #include "device_storage.h"
 #include <Arduino.h>
 #include <LittleFS.h>
-#include <string.h>
 
 namespace device_storage {
 namespace {
@@ -80,49 +79,6 @@ bool write(const char* path, const uint8_t* data, size_t len) {
 bool remove(const char* path) {
   if (!g_mounted || !path) return false;
   return LittleFS.remove(path);
-}
-
-bool exists(const char* path) {
-  return g_mounted && path && LittleFS.exists(path);
-}
-
-size_t size_of(const char* path) {
-  if (!g_mounted || !path) return 0;
-  File f = LittleFS.open(path, FILE_READ);
-  if (!f) return 0;
-  const size_t n = f.size();
-  f.close();
-  return n;
-}
-
-bool append(const char* path, const uint8_t* data, size_t len) {
-  if (!g_mounted || !path || !data || len == 0) return false;
-  File f = LittleFS.open(path, FILE_APPEND);
-  if (!f) return false;
-  const size_t written = f.write(data, len);
-  f.close();
-  return written == len;
-}
-
-void list(const char* dir, void (*visit)(const char* name, void* ctx), void* ctx) {
-  if (!g_mounted || !dir || !visit) return;
-  File root = LittleFS.open(dir);
-  if (!root || !root.isDirectory()) return;
-  for (File f = root.openNextFile(); f; f = root.openNextFile()) {
-    if (!f.isDirectory()) {
-      const char* full = f.name();
-      const char* slash = strrchr(full, '/');
-      visit(slash ? slash + 1 : full, ctx);
-    }
-    f.close();
-  }
-  root.close();
-}
-
-bool make_dir(const char* path) {
-  if (!g_mounted || !path) return false;
-  if (LittleFS.exists(path)) return true;
-  return LittleFS.mkdir(path);
 }
 
 }  // namespace device_storage

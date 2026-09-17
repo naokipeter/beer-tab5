@@ -59,31 +59,6 @@ bool redirect_target_allowed(const char* url) {
   return false;
 }
 
-bool image_source_allowed(const char* url) {
-  if (!url || strncmp(url, "https://", 8) != 0) return false;
-  const char* host = url + 8;
-  const char* slash = strchr(host, '/');
-  size_t host_len = slash ? static_cast<size_t>(slash - host) : strlen(host);
-  if (memchr(host, '@', host_len) != nullptr) return false;
-  const void* colon = memchr(host, ':', host_len);
-  if (colon) host_len = static_cast<size_t>(static_cast<const char*>(colon) - host);
-  if (host_len == 0 || host_len > 253) return false;
-
-  // Open Food Facts for catalogue photos, and Google's user content host so a
-  // beer it has no picture for can be given one by hand. Both are reached only
-  // through a URL an admin put in the sheet, so this is defence in depth rather
-  // than the primary control.
-  static const char* const kSuffixes[] = {".openfoodfacts.org",
-                                          ".googleusercontent.com"};
-  for (const char* suffix : kSuffixes) {
-    const size_t n = strlen(suffix);
-    if (host_len > n && strncmp(host + host_len - n, suffix, n) == 0) return true;
-    // Also accept the bare domain, i.e. the suffix without its leading dot.
-    if (host_len == n - 1 && strncmp(host, suffix + 1, n - 1) == 0) return true;
-  }
-  return false;
-}
-
 size_t build_sync(char* out, size_t capacity, const char* token, const char* device,
                   uint32_t since_revision) {
   JsonDocument doc;

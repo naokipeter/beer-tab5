@@ -2,7 +2,6 @@
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
 #include "ui_lvgl.h"
-#include "draw/lv_draw_buf_private.h"
 #include "settings.h"
 
 namespace display_ui {
@@ -43,16 +42,6 @@ void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
 
 uint32_t tick_cb() { return millis(); }
 
-// Decoded images go to PSRAM. A 200 px photo is 80 KB of RGB565 and a screenful
-// is several hundred, which internal RAM cannot spare beside TLS and LVGL's own
-// working set. Only the image handlers are redirected; fonts and the render
-// buffers keep the default allocator.
-void* image_buf_malloc(size_t size, lv_color_format_t) {
-  return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-}
-
-void image_buf_free(void* buf) { heap_caps_free(buf); }
-
 void log_cb(lv_log_level_t, const char* buf) {
   Serial.print("[lvgl] ");
   Serial.println(buf);
@@ -84,10 +73,6 @@ bool begin() {
   lv_display_set_flush_cb(g_display, flush_cb);
   lv_display_set_buffers(g_display, g_buf1, g_buf2, kBufferBytes,
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
-
-  lv_draw_buf_handlers_t* image_handlers = lv_draw_buf_get_image_handlers();
-  image_handlers->buf_malloc_cb = image_buf_malloc;
-  image_handlers->buf_free_cb = image_buf_free;
 
   g_touch = lv_indev_create();
   lv_indev_set_type(g_touch, LV_INDEV_TYPE_POINTER);

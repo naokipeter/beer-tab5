@@ -23,7 +23,7 @@ inline constexpr uint16_t kFormatVersion = 1;
 // correctly sized static buffer: the catalog blob is several kilobytes, which
 // has no business on the loop task's stack.
 inline constexpr size_t kHeaderBytes = 20;
-inline constexpr size_t kCatalogRecordBytes = 315;
+inline constexpr size_t kCatalogRecordBytes = 219;
 inline constexpr size_t kResidentRecordBytes = 36;
 inline constexpr size_t kQueueRecordBytes = 120;
 inline constexpr size_t kSummaryRecordBytes = 42;
@@ -42,9 +42,6 @@ size_t max_residents_bytes();
 size_t max_queue_bytes();
 
 // Return the number of bytes written, or 0 if `capacity` is too small.
-// The header advertises its record size, so widening a field makes older files
-// reject themselves and the catalog reseeds. That is the intended behaviour.
-//
 // `seed_generation` records which compiled-in seed the data descends from, so a
 // device can notice that its stored catalog predates a correction to that seed.
 // It occupies the header field previously reserved.

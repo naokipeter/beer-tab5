@@ -40,21 +40,13 @@ function cleanPrice_(value) {
   return n;
 }
 
-/**
- * Only https, and only hosts the terminal is willing to fetch from. Open Food
- * Facts for catalogue photos, and Google's user content host so a beer it has no
- * picture for can be given one by hand.
- *
- * Keep this in step with api_protocol::image_source_allowed on the device: the
- * device checks again for itself, so a mismatch shows up as a photo that saves
- * here and never appears there.
- */
+/** Only https, and only hosts we are willing to have the terminal fetch from. */
 function cleanImageUrl_(value) {
   var s = cleanText_(value, LIMITS.maxImageUrlChars);
   if (!s) return '';
-  if (/^https:[/][/]([a-z0-9-]+[.])*openfoodfacts[.]org[/]/i.test(s)) return s;
-  if (/^https:[/][/]([a-z0-9-]+[.])*googleusercontent[.]com[/]/i.test(s)) return s;
-  return '';
+  if (!/^https:/.test(s)) return '';
+  if (!/^https:[/][/]([a-z0-9-]+[.])*openfoodfacts[.]org[/]/i.test(s)) return '';
+  return s;
 }
 
 /**
