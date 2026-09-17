@@ -18,6 +18,7 @@ enum class Kind : uint8_t {
   Void = 1,
   Archive = 2,   // take a beer off the fridge grid
   Restore = 3,   // put it back
+  Create = 4,    // a beer added at the fridge, so the sheet learns about it
 };
 
 struct Entry {

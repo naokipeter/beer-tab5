@@ -186,8 +186,13 @@ bool send_queued_now() {
 
   size_t len;
   Op op;
-  if (e->kind == transaction_queue::Kind::Archive ||
-      e->kind == transaction_queue::Kind::Restore) {
+  if (e->kind == transaction_queue::Kind::Create) {
+    len = api_protocol::build_create_product(
+        g_request, sizeof(g_request), config::device_token, settings::device_id,
+        e->barcode, e->product_name, e->price_rappen, e->free_item);
+    op = Op::Purchase;  // same handling: acknowledged, then popped
+  } else if (e->kind == transaction_queue::Kind::Archive ||
+             e->kind == transaction_queue::Kind::Restore) {
     len = api_protocol::build_set_active(
         g_request, sizeof(g_request), config::device_token, settings::device_id,
         e->barcode, e->product_name,

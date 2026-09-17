@@ -30,6 +30,8 @@ function doPost(e) {
         return jsonOut_(handleVoidPurchase_(request));
       case 'mySummary':
         return jsonOut_(handleMySummary_(request));
+      case 'createProduct':
+        return jsonOut_(handleCreateProduct_(request));
       case 'setActive':
         return jsonOut_(handleSetActive_(request));
       case 'changePrice':
@@ -114,6 +116,22 @@ function handleMySummary_(request) {
     total_rappen: total,
     products: rows
   };
+}
+
+/**
+ * A beer added at the fridge. Without this the product stayed on that one
+ * terminal: the purchase reached Purchases, but Products never learned of it,
+ * so the phone page could not price or archive it.
+ */
+function handleCreateProduct_(request) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return {ok: false, retry: true, error: 'Server beschaeftigt'};
+  try {
+    upsertProduct_(request);
+    return {ok: true};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

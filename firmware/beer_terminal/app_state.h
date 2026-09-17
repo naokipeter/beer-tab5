@@ -95,6 +95,10 @@ void redraw();
 // Queues a shelve (active=true) or archive so the change reaches the backend.
 void queue_product_change(int8_t storage_index, bool active);
 
+// Queues a beer added at the fridge so the spreadsheet learns about it. Without
+// this the product existed only on this terminal.
+void queue_product_create(int8_t storage_index);
+
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);
 

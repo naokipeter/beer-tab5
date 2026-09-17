@@ -40,6 +40,14 @@ size_t build_record_purchase(char* out, size_t capacity, const char* token,
 size_t build_void_purchase(char* out, size_t capacity, const char* token,
                            const char* device, const char* transaction_id);
 
+// {"action":"createProduct","barcode":..,"name":..,"price_rappen":..,"free":bool}
+// A beer added at the fridge. Idempotent server-side: a retry updates the row it
+// already created rather than appending a second one.
+size_t build_create_product(char* out, size_t capacity, const char* token,
+                            const char* device, const char* barcode,
+                            const char* product_name, int32_t price_rappen,
+                            bool free_item);
+
 // {"action":"setActive","barcode":..,"name":..,"active":bool}
 // Shelves or archives a product. Identified by barcode when it has one, by name
 // otherwise, which is how a product added at the terminal is found.

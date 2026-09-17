@@ -246,6 +246,9 @@ bool decode_queue(const uint8_t* in, size_t len, transaction_queue::Entry* entri
       case static_cast<uint8_t>(transaction_queue::Kind::Restore):
         d.kind = transaction_queue::Kind::Restore;
         break;
+      case static_cast<uint8_t>(transaction_queue::Kind::Create):
+        d.kind = transaction_queue::Kind::Create;
+        break;
       default:
         d.kind = transaction_queue::Kind::Purchase;
         break;

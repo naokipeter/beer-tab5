@@ -425,19 +425,41 @@ void update(uint32_t now_ms) {
   }
 }
 
-void queue_product_change(int8_t storage_index, bool active) {
-  const product_catalog::Product* p = product_catalog::at_storage(storage_index);
-  if (!p || !backend::configured() || transaction_queue::full()) return;
+namespace {
+
+// Shared by the shelve/archive and create paths.
+void queue_product_entry(const product_catalog::Product& p,
+                         transaction_queue::Kind kind) {
+  if (!backend::configured() || transaction_queue::full()) return;
 
   transaction_queue::Entry e = {};
   snprintf(e.transaction_id, sizeof(e.transaction_id), "%s-%08lx-p",
            settings::device_id, static_cast<unsigned long>(millis()));
-  snprintf(e.barcode, sizeof(e.barcode), "%s", p->barcode);
-  snprintf(e.product_name, sizeof(e.product_name), "%s", p->name);
-  e.kind = active ? transaction_queue::Kind::Restore : transaction_queue::Kind::Archive;
+  snprintf(e.barcode, sizeof(e.barcode), "%s", p.barcode);
+  snprintf(e.product_name, sizeof(e.product_name), "%s", p.name);
+  e.price_rappen = p.price_rappen;
+  e.free_item = p.free_item;
+  e.kind = kind;
   if (!transaction_queue::push(e)) return;
   transaction_queue::flush();
   backend::send_queued_now();
+}
+
+}  // namespace
+
+void queue_product_change(int8_t storage_index, bool active) {
+  const product_catalog::Product* p = product_catalog::at_storage(storage_index);
+  if (!p) return;
+  queue_product_entry(*p, active ? transaction_queue::Kind::Restore
+                                 : transaction_queue::Kind::Archive);
+}
+
+void queue_product_create(int8_t storage_index) {
+  const product_catalog::Product* p = product_catalog::at_storage(storage_index);
+  if (!p) return;
+  // Queued before the purchase that follows, so the sheet gains the product
+  // first. The server treats a repeat as an update, so a retry cannot duplicate.
+  queue_product_entry(*p, transaction_queue::Kind::Create);
 }
 
 }  // namespace app_state

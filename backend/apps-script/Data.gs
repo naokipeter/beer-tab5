@@ -174,6 +174,44 @@ function findProductRow_(barcode, name) {
 }
 
 /**
+ * Creates a product, or updates the one already matching. Shared by the
+ * management page and the terminal. Caller holds the lock.
+ */
+function upsertProduct_(input) {
+  var barcode = cleanText_(input.barcode, LIMITS.maxBarcodeChars);
+  if (!isValidBarcode_(barcode)) throw new Error('Barcode-Pruefziffer stimmt nicht');
+
+  var name = cleanText_(input.name, LIMITS.maxNameChars);
+  if (!name) throw new Error('Name fehlt');
+
+  var free = input.free === true;
+  var price = free ? 0 : cleanPrice_(input.price_rappen);
+  if (price === null) throw new Error('Preis ungueltig');
+  if (!free && price === 0) throw new Error('Preis fehlt');
+
+  var product = {
+    barcode: barcode,
+    name: name,
+    price_rappen: price,
+    free: free,
+    image_url: cleanImageUrl_(input.image_url),
+    active: input.active !== false
+  };
+
+  var row = findProductRow_(barcode, name);
+  if (row > 0) {
+    // Already known — a terminal retrying, or the same beer added twice. Update
+    // rather than append, so a retry cannot produce a duplicate row.
+    writeProductRow_(row, product);
+  } else {
+    if (product.active) assertRoomForActive_(barcode, name);
+    appendProduct_(product);
+  }
+  bumpRevision_();
+  return product;
+}
+
+/**
  * Shelves or archives a product. Shared by the management page and the terminal
  * so the two cannot enforce different rules. Caller holds the lock.
  */

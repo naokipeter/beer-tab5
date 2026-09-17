@@ -246,6 +246,32 @@ int main() {
               back[2].kind == transaction_queue::Kind::Purchase,
           "archive and restore survive as themselves");
 
+    // A beer added at the fridge carries its price, which the create request
+    // needs; the archive path does not.
+    transaction_queue::Entry made[1] = {};
+    std::snprintf(made[0].transaction_id, sizeof(made[0].transaction_id), "t9");
+    std::snprintf(made[0].product_name, sizeof(made[0].product_name), "Hausbier");
+    made[0].price_rappen = 250;
+    made[0].kind = transaction_queue::Kind::Create;
+    const size_t mn = catalog_codec::encode_queue(made, 1, kb.data(), kb.size());
+    uint8_t mc = 0;
+    catalog_codec::decode_queue(kb.data(), mn, back,
+                                settings::max_queued_transactions, &mc);
+    check(mc == 1 && back[0].kind == transaction_queue::Kind::Create &&
+              back[0].price_rappen == 250 &&
+              std::strcmp(back[0].product_name, "Hausbier") == 0,
+          "a created product survives with its price");
+
+    // An unknown kind must never become a reversal.
+    std::vector<uint8_t> weird = kb;
+    weird[catalog_codec::kHeaderBytes + catalog_codec::kQueueRecordBytes - 1] = 99;
+    // The CRC now fails, which is the stronger guarantee: the blob is rejected.
+    uint8_t wc = 7;
+    check(!catalog_codec::decode_queue(weird.data(), mn, back,
+                                       settings::max_queued_transactions, &wc) &&
+              wc == 7,
+          "a tampered kind byte fails the checksum rather than being guessed at");
+
     std::vector<uint8_t> bad = qb;
     bad[n / 2] ^= 0x01;
     uint8_t c2 = 42;

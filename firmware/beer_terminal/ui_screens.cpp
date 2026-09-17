@@ -175,7 +175,10 @@ void on_new_product_confirm(lv_event_t*) {
   const int8_t storage =
       product_catalog::add_product(name, g_entry_rappen, g_entry_free);
   app_state::set_ad_hoc_product(name, g_entry_rappen, g_entry_free);
-  if (storage >= 0) app_state::context().product_index = storage;
+  if (storage >= 0) {
+    app_state::context().product_index = storage;
+    app_state::queue_product_create(storage);
+  }
   app_state::dispatch(Event::NewProductReady);
 }
 

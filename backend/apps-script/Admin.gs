@@ -33,44 +33,13 @@ function adminLoad() {
   };
 }
 
-/**
- * Creates a product or updates the existing one with the same barcode. Returns
- * the fresh catalog so the page never has to guess what the server now holds.
- */
+/** Creates or updates a product from the management page. */
 function adminSaveProduct(input) {
   requireAdmin_();
-
-  var barcode = cleanText_(input.barcode, LIMITS.maxBarcodeChars);
-  if (!isValidBarcode_(barcode)) throw new Error('Barcode-Pruefziffer stimmt nicht');
-
-  var name = cleanText_(input.name, LIMITS.maxNameChars);
-  if (!name) throw new Error('Name fehlt');
-
-  var free = input.free === true;
-  var price = free ? 0 : cleanPrice_(input.price_rappen);
-  if (price === null) throw new Error('Preis ungueltig');
-  if (!free && price === 0) throw new Error('Preis fehlt');
-
-  var product = {
-    barcode: barcode,
-    name: name,
-    price_rappen: price,
-    free: free,
-    image_url: cleanImageUrl_(input.image_url),
-    active: input.active !== false
-  };
-
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('Server beschaeftigt');
   try {
-    if (product.active) assertRoomForActive_(barcode, name);
-    var row = findProductRow_(barcode, name);
-    if (row > 0) {
-      writeProductRow_(row, product);
-    } else {
-      appendProduct_(product);
-    }
-    bumpRevision_();
+    upsertProduct_(input);
   } finally {
     lock.releaseLock();
   }

@@ -16,6 +16,18 @@ path as purchases: written to flash first, retried until acknowledged, so a
 change made without Wi-Fi is not lost. `Kind` gains `Archive` and `Restore`;
 older queue files still decode, since they only ever contain `Purchase` or `Void`.
 
+### Creating a beer had the same gap
+
+`product_catalog::add_product()` was local-only too, so a beer added through
+**Nicht gelistet** never reached `Products`. No money was lost — `recordPurchase`
+does not require the product to exist, so the drink was booked correctly — but
+the beer lived on that one terminal: invisible on the phone page, impossible to
+re-price or archive there, and gone if the flash was cleared.
+
+It now queues a `createProduct` before the purchase that follows it, so the sheet
+gains the product first. The server treats a repeat as an update of the row it
+already made, so a retry cannot produce a duplicate.
+
 ### A sync must not undo a queued change
 
 While a product change is waiting, the server's catalog is stale by definition —
@@ -56,11 +68,13 @@ never as a reversal.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 1,755,294 bytes | 79,352 bytes |
+| `./tools/build.sh` (C++17) | PASS | 1,756,148 bytes | 79,352 bytes |
 
 ## Requires the physical Tab5
 
 1. Archive a beer. It leaves the grid **and** `active` goes FALSE in the sheet.
+1b. Add a beer through `Nicht gelistet`. A row must appear in `Products` with the
+   price entered, and the beer must be visible on the phone page.
 2. Wait past a sync. It must stay archived — this is what was broken.
 3. Restore it from `Nicht gelistet`. `active` goes TRUE again.
 4. Archive with the router off: it leaves the grid, the admin screen shows one
