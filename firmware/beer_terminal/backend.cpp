@@ -184,6 +184,16 @@ bool send_queued_now() {
   const transaction_queue::Entry* e = transaction_queue::head();
   if (!e) return false;
 
+  // Say what is going out. A queue that looks stuck and a queue whose entries
+  // are being refused one by one look identical from the outside otherwise.
+  static const char* const kKindName[] = {"purchase", "void", "archive", "restore",
+                                          "create"};
+  const uint8_t kind_index = static_cast<uint8_t>(e->kind);
+  Serial.printf("[queue] sending %s (%s), %u left\n",
+                kind_index < 5 ? kKindName[kind_index] : "?",
+                e->product_name[0] ? e->product_name : e->transaction_id,
+                static_cast<unsigned>(transaction_queue::count()));
+
   size_t len;
   Op op;
   if (e->kind == transaction_queue::Kind::Create) {
@@ -318,7 +328,10 @@ void update(uint32_t now_ms) {
   } else if (outcome == api_protocol::Outcome::Rejected) {
     // The backend understood and refused. Retrying the same bytes would be
     // refused the same way, so stop carrying it.
-    Serial.printf("[backend] rejected: %s\n", err);
+    // Dropping the entry is right for a verdict the server means, but it is
+    // also how an out-of-date deployment silently loses every product change,
+    // so say exactly what was thrown away.
+    Serial.printf("[backend] REJECTED and dropped: %s\n", err);
     transaction_queue::pop();
     finish(Result::Rejected, err[0] ? err : "Vom Server abgelehnt");
   } else {
