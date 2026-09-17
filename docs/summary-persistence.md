@@ -36,6 +36,23 @@ Server-side, `consumptionSummary_()` is shared by the device sync and the
 management page, so the two cannot disagree. Voided purchases are excluded by
 both.
 
+## Absent is not empty
+
+A backend that has not been redeployed answers without a `summary` field at all.
+Reading that as an empty summary would replace the stored figures with nothing
+and persist it — the terminal would then show only what is still in its own
+queue, which looks exactly like the local-tally behaviour this change replaced.
+
+`SyncResult::has_summary` records whether the field was present. When it is
+absent the stored baseline is kept and serial says to redeploy the Apps Script.
+
+The sync log line reports the summary row count, so whether the backend is
+sending it can be read directly:
+
+    [sync] applied revision 7: 3 products, 4 residents, 4 summary
+    [sync] unchanged at revision 7, 4 summary row(s)
+    [sync] response carries no summary; keeping the stored one. Redeploy the Apps Script.
+
 ## Verification
 
     ./tools/test.sh
@@ -48,7 +65,7 @@ more rows than this build can hold is rejected.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17), clean | PASS | 1,751,900 bytes | 78,728 bytes |
+| `./tools/build.sh` (C++17), clean | PASS | 1,752,068 bytes | 78,728 bytes |
 
 ## Requires the physical Tab5
 

@@ -52,6 +52,10 @@ struct SyncResult {
   uint8_t product_count;
   uint8_t resident_count;
   uint8_t summary_count;
+  // Whether the response carried a summary at all. An absent summary is not an
+  // empty one: a backend that predates this field must not be read as "nobody
+  // has drunk anything", which would wipe the stored history.
+  bool has_summary;
   product_catalog::Product products[settings::max_products];
   resident_directory::Entry residents[settings::max_residents];
   // Acknowledged purchases per resident. Sent on every sync, unlike the catalog,

@@ -90,12 +90,20 @@ void apply_sync() {
     return;
   }
   // The summary arrives on every sync, so apply it before the revision check
-  // that short-circuits an unchanged catalog.
-  purchase_log::set_baseline(g_sync.summary, g_sync.summary_count);
+  // that short-circuits an unchanged catalog. A response without the field at
+  // all comes from a backend that has not been redeployed; leave the stored
+  // figures alone rather than replacing them with nothing.
+  if (g_sync.has_summary) {
+    purchase_log::set_baseline(g_sync.summary, g_sync.summary_count);
+  } else {
+    Serial.println("[sync] response carries no summary; keeping the stored one. "
+                   "Redeploy the Apps Script.");
+  }
 
   if (!g_sync.changed && g_sync.revision == product_catalog::revision()) {
-    Serial.printf("[sync] unchanged at revision %lu\n",
-                  static_cast<unsigned long>(g_sync.revision));
+    Serial.printf("[sync] unchanged at revision %lu, %u summary row(s)\n",
+                  static_cast<unsigned long>(g_sync.revision),
+                  static_cast<unsigned>(g_sync.summary_count));
     return;
   }
   // Only replace the resident list when the backend actually sent one, so a
@@ -104,10 +112,11 @@ void apply_sync() {
     resident_directory::replace_all(g_sync.residents, g_sync.resident_count);
   }
   product_catalog::replace_all(g_sync.products, g_sync.product_count, g_sync.revision);
-  Serial.printf("[sync] applied revision %lu: %u products, %u residents\n",
+  Serial.printf("[sync] applied revision %lu: %u products, %u residents, %u summary\n",
                 static_cast<unsigned long>(g_sync.revision),
                 static_cast<unsigned>(g_sync.product_count),
-                static_cast<unsigned>(g_sync.resident_count));
+                static_cast<unsigned>(g_sync.resident_count),
+                static_cast<unsigned>(g_sync.summary_count));
 }
 
 }  // namespace

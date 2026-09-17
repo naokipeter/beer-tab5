@@ -201,6 +201,28 @@ int main() {
           "more summary rows than this build can hold is rejected");
   }
 
+  {
+    // A backend that has not been redeployed sends no summary at all. Reading
+    // that as an empty one would wipe the stored history.
+    const char* body =
+        "{\"ok\":true,\"revision\":1,\"changed\":false,\"products\":[],"
+        "\"residents\":[]}";
+    api_protocol::SyncResult s2{};
+    s2.has_summary = true;
+    api_protocol::parse_sync(body, std::strlen(body), &s2, err, sizeof(err));
+    check(!s2.has_summary, "an absent summary is reported as absent, not empty");
+  }
+  {
+    // A genuinely empty summary is different: nobody has drunk anything yet.
+    const char* body =
+        "{\"ok\":true,\"revision\":1,\"products\":[],\"residents\":[],"
+        "\"summary\":[]}";
+    api_protocol::SyncResult s2{};
+    api_protocol::parse_sync(body, std::strlen(body), &s2, err, sizeof(err));
+    check(s2.has_summary && s2.summary_count == 0,
+          "an empty summary is distinguished from a missing one");
+  }
+
   std::printf("\nredirect targets\n");
   {
     using api_protocol::redirect_target_allowed;

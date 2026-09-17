@@ -135,6 +135,7 @@ Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,
   out->product_count = 0;
   out->resident_count = 0;
   out->summary_count = 0;
+  out->has_summary = doc["summary"].is<JsonArrayConst>();
 
   for (JsonObjectConst p : products) {
     product_catalog::Product& d = out->products[out->product_count];
