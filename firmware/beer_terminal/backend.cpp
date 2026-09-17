@@ -14,7 +14,7 @@
 namespace backend {
 namespace {
 
-enum class Op : uint8_t { None, Sync, Purchase, Void };
+enum class Op : uint8_t { None, Sync, Purchase, Void, MySummary };
 
 // One operation at a time. It may be waiting for the radio before it is handed
 // to the client, which is why `posted` is separate from `op`: a configured
@@ -37,11 +37,14 @@ uint8_t g_send_failures = 0;
 // Static: these are kilobytes and the loop task's stack is not the place for them.
 char g_request[api_protocol::kMaxRequestBytes];
 api_protocol::SyncResult g_sync;
+api_protocol::MySummary g_my_summary;
+MySummaryState g_my_state = MySummaryState::Idle;
+char g_my_resident[12] = {};
 
 void finish(Result r, const char* message) {
   // A background sync must never surface in the purchase UI, so it resolves to
   // Idle rather than Success or Failure.
-  g_result = (g_op == Op::Sync) ? Result::Idle : r;
+  g_result = (g_op == Op::Sync || g_op == Op::MySummary) ? Result::Idle : r;
   snprintf(g_error, sizeof(g_error), "%s", message ? message : "");
   g_op = Op::None;
   g_posted = false;
@@ -135,6 +138,30 @@ void begin() {
 
 bool configured() { return config::configured; }
 
+bool request_my_summary(const char* resident_id) {
+  if (!configured() || !resident_id || !resident_id[0]) {
+    g_my_state = MySummaryState::Unavailable;
+    return false;
+  }
+  snprintf(g_my_resident, sizeof(g_my_resident), "%s", resident_id);
+  g_my_state = MySummaryState::Loading;
+  if (g_op != Op::None) {
+    // Something else holds the slot; update() picks this up once it is free.
+    return true;
+  }
+  const size_t len =
+      api_protocol::build_my_summary(g_request, sizeof(g_request), config::device_token,
+                                     settings::device_id, g_my_resident);
+  if (!start(Op::MySummary, len, millis())) {
+    g_my_state = MySummaryState::Unavailable;
+    return false;
+  }
+  return true;
+}
+
+MySummaryState my_summary_state() { return g_my_state; }
+const api_protocol::MySummary& my_summary() { return g_my_summary; }
+
 bool request_sync() {
   // A sync never preempts a purchase.
   if (!configured() || g_op != Op::None) return false;
@@ -172,6 +199,14 @@ void update(uint32_t now_ms) {
   if (!configured()) return;
 
   if (g_op == Op::None) {
+    // A waiting overview request goes first: somebody is looking at the screen.
+    if (g_my_state == MySummaryState::Loading && g_my_resident[0]) {
+      const size_t len = api_protocol::build_my_summary(
+          g_request, sizeof(g_request), config::device_token, settings::device_id,
+          g_my_resident);
+      if (start(Op::MySummary, len, now_ms)) return;
+      g_my_state = MySummaryState::Unavailable;
+    }
     // Drain before syncing: a recorded drink matters more than a fresh price.
     if (!transaction_queue::empty()) {
       if (static_cast<int32_t>(now_ms - g_retry_after) >= 0) send_queued_now();
@@ -199,6 +234,7 @@ void update(uint32_t now_ms) {
       }
     } else if (static_cast<int32_t>(now_ms - g_deadline) >= 0) {
       Serial.println("[backend] gave up waiting for the radio");
+      if (g_op == Op::MySummary) g_my_state = MySummaryState::Unavailable;
       const bool was_sync = g_op == Op::Sync;
       note_send_failure(now_ms);
       finish(Result::Unreachable, "Kein WLAN");
@@ -212,6 +248,7 @@ void update(uint32_t now_ms) {
 
   if (s == api_client::Status::Failed) {
     Serial.printf("[backend] request failed: %s\n", api_client::error_text());
+    if (g_op == Op::MySummary) g_my_state = MySummaryState::Unavailable;
     const bool was_sync = g_op == Op::Sync;
     // The entry stays queued: not reaching the server says nothing about
     // whether it should be recorded.
@@ -222,6 +259,20 @@ void update(uint32_t now_ms) {
   }
 
   if (s != api_client::Status::Done) return;
+
+  if (g_op == Op::MySummary) {
+    char err[64];
+    const auto outcome = api_protocol::parse_my_summary(
+        api_client::response(), api_client::response_len(), &g_my_summary, err,
+        sizeof(err));
+    g_my_state = outcome == api_protocol::Outcome::Ok ? MySummaryState::Ready
+                                                      : MySummaryState::Unavailable;
+    if (outcome != api_protocol::Outcome::Ok) {
+      Serial.printf("[summary] fetch rejected: %s\n", err);
+    }
+    finish(Result::Idle, "");
+    return;
+  }
 
   if (g_op == Op::Sync) {
     apply_sync();

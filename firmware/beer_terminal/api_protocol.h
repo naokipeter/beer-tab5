@@ -40,11 +40,11 @@ size_t build_record_purchase(char* out, size_t capacity, const char* token,
 size_t build_void_purchase(char* out, size_t capacity, const char* token,
                            const char* device, const char* transaction_id);
 
-// True only for an https URL on one of Google's own hosts. A redirect target
-// arrives over the network and decides where the next request goes, so it is a
-// trust decision, not a formatting one — which is why it lives here, beside the
-// rest of the contract, and is tested on the host.
-bool redirect_target_allowed(const char* url);
+// {"action":"mySummary","resident_id":..}
+// Response: {ok, resident_name, drinks, total_rappen, products:[{name, drinks,
+// total_rappen}]}. One person's own consumption, per product.
+size_t build_my_summary(char* out, size_t capacity, const char* token,
+                        const char* device, const char* resident_id);
 
 struct SyncResult {
   uint32_t revision;
@@ -69,6 +69,30 @@ enum class Outcome : uint8_t {
   Rejected,      // ok:false, with a message in `error`
   TooManyItems,  // more products or residents than this build can hold
 };
+
+// What the overview screen shows. Bounded so it fits a static buffer.
+inline constexpr uint8_t kMaxSummaryProducts = 12;
+
+struct MySummary {
+  char resident_name[24];
+  uint16_t drinks;
+  int32_t total_rappen;
+  uint8_t product_count;
+  struct Row {
+    char name[40];
+    uint16_t drinks;
+    int32_t total_rappen;
+  } products[kMaxSummaryProducts];
+};
+
+Outcome parse_my_summary(const char* body, size_t len, MySummary* out, char* error,
+                         size_t error_capacity);
+
+// True only for an https URL on one of Google's own hosts. A redirect target
+// arrives over the network and decides where the next request goes, so it is a
+// trust decision, not a formatting one — which is why it lives here, beside the
+// rest of the contract, and is tested on the host.
+bool redirect_target_allowed(const char* url);
 
 // `error` receives a bounded, sanitised copy of any server message.
 Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,

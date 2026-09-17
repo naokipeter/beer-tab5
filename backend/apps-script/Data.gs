@@ -107,6 +107,44 @@ function consumptionSummary_() {
   return out.slice(0, LIMITS.maxResidents);
 }
 
+/**
+ * One resident's consumption, broken down by product. Fetched on demand rather
+ * than ridden along on every sync: the full residents-by-products matrix would
+ * be larger than the terminal's response buffer in the worst case, while one
+ * person's breakdown is a handful of rows.
+ */
+function residentBreakdown_(residentId) {
+  var sh = purchasesSheet_();
+  var last = sh.getLastRow();
+  var out = [];
+  if (last < 2) return out;
+
+  var values = sh.getRange(2, 1, last - 1, PURCHASE_COLUMNS.length).getValues();
+  var iName = PURCHASE_COLUMNS.indexOf('product_name');
+  var iPrice = PURCHASE_COLUMNS.indexOf('price_rappen');
+  var iResident = PURCHASE_COLUMNS.indexOf('resident_id');
+  var iVoid = PURCHASE_COLUMNS.indexOf('voided_at');
+  var byProduct = {};
+
+  for (var i = 0; i < values.length; i++) {
+    if (values[i][iVoid]) continue;
+    if (cleanText_(values[i][iResident], 11) !== residentId) continue;
+    // Grouped by the name recorded at purchase time, so renaming a product later
+    // does not silently merge or split someone's history.
+    var name = cleanText_(values[i][iName], LIMITS.maxNameChars) || '?';
+    if (!byProduct[name]) {
+      byProduct[name] = {name: name, drinks: 0, total_rappen: 0};
+      out.push(byProduct[name]);
+    }
+    byProduct[name].drinks++;
+    byProduct[name].total_rappen += Number(values[i][iPrice]) || 0;
+  }
+
+  out.sort(function(a, b) { return b.drinks - a.drinks; });
+  // The terminal shows one screenful; the rest would not be readable anyway.
+  return out.slice(0, 12);
+}
+
 /** 1-based sheet row of a transaction id, or 0. */
 function findPurchaseRow_(transactionId) {
   var sh = purchasesSheet_();

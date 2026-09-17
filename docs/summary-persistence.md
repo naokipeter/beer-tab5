@@ -1,5 +1,34 @@
 # Consumption summary
 
+## What the overview shows
+
+**One person's own consumption, broken down by beer** — name, count and total per
+beer, plus a grand total. Not everybody's figures: someone standing at the fridge
+is answering "what do I owe", and the person is already known, because the screen
+is reached from the confirmation of their own purchase.
+
+The residents-by-products matrix belongs in the spreadsheet, where settling up
+happens. A `QUERY` over `Purchases` keeps it a view of the truth rather than a
+second copy of it.
+
+## Fetched on demand, not on every sync
+
+The breakdown is requested when the screen opens (`mySummary` with the
+resident id), not carried on every sync. The full matrix would be
+`residents x products` — up to 352 rows in the worst case, comfortably past the
+8 KB response buffer — while one person's breakdown is at most a dozen rows.
+
+It is also fresher: the screen opens seconds after a purchase, so the figures
+include it.
+
+Offline the backend's history is out of reach. The screen then reports what this
+device still owes — the purchases for that person still in the queue — rather
+than an empty table, since that number is known exactly.
+
+The sync-level summary stays for the admin screen and as the cheap per-resident
+total; the two come from the same `Purchases` sheet, so they cannot disagree.
+
+
 The summary survives a reboot and shows what the **spreadsheet** holds, not only
 what this device happened to see since it was switched on.
 

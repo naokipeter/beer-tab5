@@ -633,11 +633,60 @@ void build_undoing() {
 
 void build_summary() {
   lv_obj_t* scr = build_root();
-  build_header(scr, "Übersicht", false);
 
-  const uint8_t n = purchase_log::count();
-  if (n == 0) {
-    lv_obj_t* l = make_label(scr, "Noch nichts erfasst", settings::theme::text_muted,
+  const api_protocol::MySummary& s = backend::my_summary();
+  const backend::MySummaryState state = backend::my_summary_state();
+  const app_state::Context& ctx = app_state::context();
+  const resident_directory::Entry* r =
+      ctx.resident_index >= 0
+          ? resident_directory::at(static_cast<uint8_t>(ctx.resident_index))
+          : nullptr;
+
+  char title[64];
+  snprintf(title, sizeof(title), "%s",
+           state == backend::MySummaryState::Ready && s.resident_name[0]
+               ? s.resident_name
+               : (r ? r->name : "Übersicht"));
+  build_header(scr, title, false);
+
+  if (state == backend::MySummaryState::Loading) {
+    lv_obj_t* sp = lv_spinner_create(scr);
+    lv_obj_set_size(sp, 90, 90);
+    lv_obj_center(sp);
+    lv_obj_set_style_arc_color(sp, col(settings::theme::accent), LV_PART_INDICATOR);
+    build_footer_single(scr, "Zurück", Event::Cancel, settings::theme::surface_alt,
+                        settings::theme::text);
+    add_dwell_bar(scr, settings::theme::accent);
+    return;
+  }
+
+  if (state != backend::MySummaryState::Ready) {
+    // Offline the backend's history is out of reach, but what this device still
+    // owes is known exactly, so show that rather than an empty screen.
+    uint16_t queued = 0;
+    for (uint8_t i = 0; i < transaction_queue::count(); ++i) {
+      const transaction_queue::Entry* e = transaction_queue::at(i);
+      if (e && e->kind == transaction_queue::Kind::Purchase && r &&
+          strcmp(e->resident_id, r->id) == 0) {
+        ++queued;
+      }
+    }
+    char line[96];
+    if (queued > 0) {
+      snprintf(line, sizeof(line), "Offline - %u Bier noch nicht übertragen", queued);
+    } else {
+      snprintf(line, sizeof(line), "Übersicht gerade nicht abrufbar");
+    }
+    lv_obj_t* l = make_label(scr, line, settings::theme::text_muted, &font_de_28);
+    lv_obj_center(l);
+    build_footer_single(scr, "Zurück", Event::Cancel, settings::theme::surface_alt,
+                        settings::theme::text);
+    add_dwell_bar(scr, settings::theme::accent);
+    return;
+  }
+
+  if (s.product_count == 0) {
+    lv_obj_t* l = make_label(scr, "Noch nichts getrunken", settings::theme::text_muted,
                              &font_de_32);
     lv_obj_center(l);
   } else {
@@ -645,44 +694,44 @@ void build_summary() {
     const int16_t row_h = 52;
     const int16_t w = settings::screen_w - 2 * settings::grid_margin;
 
-    lv_obj_t* h1 = make_label(scr, "Name", settings::theme::text_muted,
-                              &font_de_20);
+    lv_obj_t* h1 = make_label(scr, "Bier", settings::theme::text_muted, &font_de_20);
     lv_obj_set_pos(h1, settings::grid_margin + 16, top);
-    lv_obj_t* h2 = make_label(scr, "Anzahl", settings::theme::text_muted,
-                              &font_de_20);
+    lv_obj_t* h2 = make_label(scr, "Anzahl", settings::theme::text_muted, &font_de_20);
     lv_obj_set_pos(h2, settings::grid_margin + w - 420, top);
-    lv_obj_t* h3 = make_label(scr, "Total", settings::theme::text_muted,
-                              &font_de_20);
+    lv_obj_t* h3 = make_label(scr, "Total", settings::theme::text_muted, &font_de_20);
     lv_obj_set_pos(h3, settings::grid_margin + w - 230, top);
 
-    for (uint8_t i = 0; i < n; ++i) {
-      const purchase_log::Tally* t = purchase_log::at(i);
+    for (uint8_t i = 0; i < s.product_count; ++i) {
       const int16_t y = static_cast<int16_t>(top + 32 + i * row_h);
+      // Stop before the footer rather than drawing underneath it.
+      if (y + row_h > settings::screen_h - settings::footer_h - 30) break;
+
       lv_obj_t* row = make_panel(scr, settings::grid_margin, y, w, row_h - 8,
                                  settings::theme::surface);
-      lv_obj_t* nm = make_label(row, t->resident_name, settings::theme::text,
+      lv_obj_t* nm = make_label(row, s.products[i].name, settings::theme::text,
                                 &font_de_28);
+      lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+      lv_obj_set_width(nm, w - 460);
       lv_obj_align(nm, LV_ALIGN_LEFT_MID, 16, 0);
 
       char cnt[16];
-      snprintf(cnt, sizeof(cnt), "%u", static_cast<unsigned>(t->drinks));
+      snprintf(cnt, sizeof(cnt), "%u", static_cast<unsigned>(s.products[i].drinks));
       lv_obj_t* cl = make_label(row, cnt, settings::theme::text, &font_de_28);
       lv_obj_align(cl, LV_ALIGN_LEFT_MID, w - 420, 0);
 
       char sum[32];
-      product_catalog::format_rappen(t->total_rappen, false, sum, sizeof(sum));
+      product_catalog::format_rappen(s.products[i].total_rappen, false, sum,
+                                     sizeof(sum));
       lv_obj_t* sl = make_label(row, sum, settings::theme::accent, &font_de_28);
       lv_obj_align(sl, LV_ALIGN_LEFT_MID, w - 230, 0);
     }
 
     char total[64];
     char amount[32];
-    product_catalog::format_rappen(purchase_log::total_rappen(), false, amount,
-                                   sizeof(amount));
-    snprintf(total, sizeof(total), "%u Getränke, %s",
-             static_cast<unsigned>(purchase_log::total_drinks()), amount);
-    lv_obj_t* tl = make_label(scr, total, settings::theme::text_muted,
-                              &font_de_20);
+    product_catalog::format_rappen(s.total_rappen, false, amount, sizeof(amount));
+    snprintf(total, sizeof(total), "%u Getränke, %s", static_cast<unsigned>(s.drinks),
+             amount);
+    lv_obj_t* tl = make_label(scr, total, settings::theme::text, &font_de_32);
     lv_obj_align(tl, LV_ALIGN_BOTTOM_LEFT, settings::grid_margin,
                  -settings::footer_h - 4);
   }

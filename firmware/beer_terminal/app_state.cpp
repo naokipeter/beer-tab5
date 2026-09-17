@@ -71,11 +71,17 @@ void enter(State next) {
       g_dwell_total = g_ctx.undone ? settings::undo_dwell_ms
                                    : settings::success_dwell_ms;
       break;
-    case State::Summary:
+    case State::Summary: {
       // Long enough to read the table, but it still returns on its own so the
       // terminal never sits lit in front of the fridge.
       g_dwell_total = settings::summary_dwell_ms;
+      const resident_directory::Entry* r =
+          g_ctx.resident_index >= 0
+              ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
+              : nullptr;
+      backend::request_my_summary(r ? r->id : "");
       break;
+    }
     default:
       break;
   }
@@ -190,6 +196,10 @@ void begin(ChangeHandler on_change) {
 
 State state() { return g_state; }
 uint32_t current_dwell_ms() { return g_dwell_total; }
+
+void redraw() {
+  if (g_on_change) g_on_change(g_state, g_state);
+}
 Context& context() { return g_ctx; }
 
 const char* state_name(State s) {
@@ -348,6 +358,16 @@ void dispatch(Event e) {
 }
 
 void update(uint32_t now_ms) {
+  // The overview is fetched after its screen is drawn, so redraw when it lands.
+  if (g_state == State::Summary) {
+    static backend::MySummaryState last = backend::MySummaryState::Idle;
+    const backend::MySummaryState now = backend::my_summary_state();
+    if (now != last) {
+      last = now;
+      if (now != backend::MySummaryState::Loading) redraw();
+    }
+  }
+
   // A real request finishes when the backend says so, not on a timer.
   if (!g_simulated && (g_state == State::Submitting || g_state == State::Undoing)) {
     const backend::Result r = backend::result();

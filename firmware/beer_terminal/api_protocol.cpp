@@ -97,6 +97,60 @@ size_t build_void_purchase(char* out, size_t capacity, const char* token,
   return serialise(doc, out, capacity);
 }
 
+size_t build_my_summary(char* out, size_t capacity, const char* token,
+                        const char* device, const char* resident_id) {
+  JsonDocument doc;
+  doc["action"] = "mySummary";
+  doc["token"] = token;
+  doc["device"] = device;
+  doc["resident_id"] = resident_id ? resident_id : "";
+  return serialise(doc, out, capacity);
+}
+
+Outcome parse_my_summary(const char* body, size_t len, MySummary* out, char* error,
+                         size_t error_capacity) {
+  if (!body || !out) return Outcome::Malformed;
+  put_error(error, error_capacity, "");
+
+  JsonDocument doc;
+  if (deserializeJson(doc, body, len) != DeserializationError::Ok) {
+    put_error(error, error_capacity, "Antwort unlesbar");
+    return Outcome::Malformed;
+  }
+  if (!doc["ok"].is<bool>()) {
+    put_error(error, error_capacity, "Antwort unvollstaendig");
+    return Outcome::Malformed;
+  }
+  if (!doc["ok"].as<bool>()) {
+    put_error(error, error_capacity, doc["error"].is<const char*>()
+                                         ? doc["error"].as<const char*>()
+                                         : "Server hat abgelehnt");
+    return Outcome::Rejected;
+  }
+
+  JsonArrayConst rows = doc["products"].as<JsonArrayConst>();
+  if (rows.size() > kMaxSummaryProducts) return Outcome::TooManyItems;
+
+  *out = MySummary{};
+  copy_sanitised(out->resident_name, sizeof(out->resident_name),
+                 doc["resident_name"].as<const char*>());
+  const int32_t drinks = doc["drinks"].as<int32_t>();
+  out->drinks = drinks > 0 ? static_cast<uint16_t>(drinks) : 0;
+  out->total_rappen = doc["total_rappen"].as<int32_t>();
+
+  for (JsonObjectConst r : rows) {
+    MySummary::Row& d = out->products[out->product_count];
+    d = MySummary::Row{};
+    copy_sanitised(d.name, sizeof(d.name), r["name"].as<const char*>());
+    const int32_t n = r["drinks"].as<int32_t>();
+    d.drinks = n > 0 ? static_cast<uint16_t>(n) : 0;
+    d.total_rappen = r["total_rappen"].as<int32_t>();
+    if (d.name[0] == '\0') continue;
+    ++out->product_count;
+  }
+  return Outcome::Ok;
+}
+
 Outcome parse_sync(const char* body, size_t len, SyncResult* out, char* error,
                    size_t error_capacity) {
   if (!body || !out) return Outcome::Malformed;

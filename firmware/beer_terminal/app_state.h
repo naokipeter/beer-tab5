@@ -88,6 +88,10 @@ bool failure_simulated();
 // bar cannot disagree with the deadline it is showing.
 uint32_t current_dwell_ms();
 
+// Rebuilds the current screen without a transition, for data that arrives after
+// the screen was drawn.
+void redraw();
+
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);
 

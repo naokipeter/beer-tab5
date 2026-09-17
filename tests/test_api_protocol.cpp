@@ -223,6 +223,69 @@ int main() {
           "an empty summary is distinguished from a missing one");
   }
 
+  std::printf("\nown consumption\n");
+  {
+    const size_t n = api_protocol::build_my_summary(req, sizeof(req), "tok",
+                                                    "fridge-01", "r1");
+    check(n > 0 && field(req, "action") == "mySummary" && field(req, "resident_id") == "r1",
+          "the request names the action and the person");
+  }
+  {
+    const char* body =
+        "{\"ok\":true,\"resident_name\":\"Jörg\",\"drinks\":15,"
+        "\"total_rappen\":2860,\"products\":["
+        "{\"name\":\"Feldschlösschen\",\"drinks\":13,\"total_rappen\":2340},"
+        "{\"name\":\"Gratisbier\",\"drinks\":2,\"total_rappen\":0}]}";
+    api_protocol::MySummary m{};
+    const auto o = api_protocol::parse_my_summary(body, std::strlen(body), &m, err,
+                                                  sizeof(err));
+    check(o == api_protocol::Outcome::Ok, "one person's breakdown parses");
+    check(std::strcmp(m.resident_name, "Jörg") == 0 && m.drinks == 15 &&
+              m.total_rappen == 2860,
+          "the name and the grand total survive");
+    check(m.product_count == 2 &&
+              std::strcmp(m.products[0].name, "Feldschlösschen") == 0 &&
+              m.products[0].drinks == 13 && m.products[0].total_rappen == 2340,
+          "per-beer counts and totals survive");
+    check(m.products[1].total_rappen == 0 && m.products[1].drinks == 2,
+          "a free beer counts as drunk but costs nothing");
+  }
+  {
+    // Someone who has never booked anything is a normal state, not an error.
+    const char* body =
+        "{\"ok\":true,\"resident_name\":\"Neu\",\"drinks\":0,"
+        "\"total_rappen\":0,\"products\":[]}";
+    api_protocol::MySummary m{};
+    check(api_protocol::parse_my_summary(body, std::strlen(body), &m, err,
+                                         sizeof(err)) == api_protocol::Outcome::Ok &&
+              m.product_count == 0,
+          "an empty breakdown parses");
+  }
+  {
+    std::string big = "{\"ok\":true,\"drinks\":1,\"products\":[";
+    for (int i = 0; i < api_protocol::kMaxSummaryProducts + 1; ++i) {
+      if (i) big += ",";
+      big += "{\"name\":\"X\",\"drinks\":1,\"total_rappen\":1}";
+    }
+    big += "]}";
+    api_protocol::MySummary m{};
+    m.product_count = 99;
+    check(api_protocol::parse_my_summary(big.c_str(), big.size(), &m, err,
+                                         sizeof(err)) ==
+              api_protocol::Outcome::TooManyItems &&
+              m.product_count == 99,
+          "more beers than fit the screen is rejected without touching the result");
+  }
+  {
+    const char* body = "{\"ok\":false,\"error\":\"Person fehlt\"}";
+    api_protocol::MySummary m{};
+    check(api_protocol::parse_my_summary(body, std::strlen(body), &m, err,
+                                         sizeof(err)) ==
+              api_protocol::Outcome::Rejected &&
+              std::strcmp(err, "Person fehlt") == 0,
+          "a refusal surfaces its reason");
+  }
+
   std::printf("\nredirect targets\n");
   {
     using api_protocol::redirect_target_allowed;

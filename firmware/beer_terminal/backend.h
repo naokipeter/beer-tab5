@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "api_protocol.h"
 
 // Sits between the state machine and the network. Owns the request lifecycle,
 // applies a sync to the catalog and resident list, and keeps the state machine
@@ -39,6 +40,13 @@ bool send_queued_now();
 
 // Asks for a catalog and resident refresh. Results are applied by update().
 bool request_sync();
+
+// Fetches one resident's own consumption for the overview screen. Never
+// preempts a purchase; the queue is drained first.
+enum class MySummaryState : uint8_t { Idle, Loading, Ready, Unavailable };
+bool request_my_summary(const char* resident_id);
+MySummaryState my_summary_state();
+const api_protocol::MySummary& my_summary();
 
 // State of the caller-visible operation, i.e. a purchase or a void. A background
 // sync never disturbs this.

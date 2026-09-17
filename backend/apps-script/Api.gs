@@ -28,6 +28,8 @@ function doPost(e) {
         return jsonOut_(handleRecordPurchase_(request));
       case 'voidPurchase':
         return jsonOut_(handleVoidPurchase_(request));
+      case 'mySummary':
+        return jsonOut_(handleMySummary_(request));
       default:
         return jsonOut_({ok: false, error: 'Unbekannte Aktion'});
     }
@@ -86,6 +88,27 @@ function handleSync_(request) {
   return {
     ok: true, revision: rev, changed: true, products: products,
     residents: residents, summary: summary
+  };
+}
+
+/** One resident's own consumption, per product. */
+function handleMySummary_(request) {
+  var residentId = cleanText_(request.resident_id, 11);
+  if (!residentId) return {ok: false, error: 'Person fehlt'};
+  var resident = findResident_(residentId);
+  var rows = residentBreakdown_(residentId);
+  var total = 0;
+  var drinks = 0;
+  for (var i = 0; i < rows.length; i++) {
+    total += rows[i].total_rappen;
+    drinks += rows[i].drinks;
+  }
+  return {
+    ok: true,
+    resident_name: resident ? resident.name : residentId,
+    drinks: drinks,
+    total_rappen: total,
+    products: rows
   };
 }
 
