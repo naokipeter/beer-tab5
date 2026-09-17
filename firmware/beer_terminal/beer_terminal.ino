@@ -12,6 +12,7 @@
 #include "backend.h"
 #include "device_storage.h"
 #include "display_ui.h"
+#include "image_cache.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -37,6 +38,7 @@ void setup() {
   product_catalog::begin();
   resident_directory::begin();
   transaction_queue::begin();
+  image_cache::begin();
   purchase_log::begin();
 
   if (!display_ui::begin()) {
@@ -67,6 +69,7 @@ void loop() {
   M5.update();
   wifi_manager::update(now);
   backend::update(now);
+  image_cache::update(now);
   app_state::update(now);
   display_ui::update();
   // Persist off the UI event path, so a flash write never delays a touch.

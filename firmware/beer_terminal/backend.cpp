@@ -4,6 +4,7 @@
 #include "api_client.h"
 #include "api_protocol.h"
 #include "config.h"
+#include "image_cache.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -122,6 +123,9 @@ void apply_sync() {
   if (g_sync.resident_count > 0) {
     resident_directory::replace_all(g_sync.residents, g_sync.resident_count);
   }
+  // The catalog is about to be replaced, so every cached photo may now belong
+  // to a product that is gone. Drop them together with their decoded entries.
+  image_cache::release_all();
   product_catalog::replace_all(g_sync.products, g_sync.product_count, g_sync.revision);
   Serial.printf("[sync] applied revision %lu: %u products, %u residents, %u summary\n",
                 static_cast<unsigned long>(g_sync.revision),

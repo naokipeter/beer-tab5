@@ -300,6 +300,8 @@ int main() {
           "another host is refused");
     check(!redirect_target_allowed("https://google.com.evil.example/x"),
           "a suffix lookalike is refused");
+    check(!redirect_target_allowed("https://images.openfoodfacts.org/x.jpg"),
+          "an image host is not an API redirect target");
     check(!redirect_target_allowed("https://notgoogle.com/x"),
           "a host merely ending in the wrong place is refused");
     check(!redirect_target_allowed("https://evil.example/?x=.google.com"),
@@ -311,6 +313,35 @@ int main() {
     // The bare apex is intentionally refused: every host we talk to is a
     // subdomain, and allowing it would widen the surface for nothing.
     check(!redirect_target_allowed("https://google.com/x"), "the bare apex is refused");
+  }
+
+  std::printf("\nimage sources\n");
+  {
+    using api_protocol::image_source_allowed;
+    check(image_source_allowed("https://images.openfoodfacts.org/images/x.400.jpg"),
+          "an Open Food Facts image host is allowed");
+    check(image_source_allowed("https://openfoodfacts.org/x.jpg"),
+          "the bare Open Food Facts domain is allowed");
+    check(!image_source_allowed("http://images.openfoodfacts.org/x.jpg"),
+          "plain http is refused, so a photo cannot be swapped in transit");
+    check(!image_source_allowed("https://evil.example/x.jpg"),
+          "another host is refused");
+    check(!image_source_allowed("https://openfoodfacts.org.evil.example/x.jpg"),
+          "a suffix lookalike is refused");
+    check(!image_source_allowed("https://notopenfoodfacts.org/x.jpg"),
+          "a host ending in the wrong place is refused");
+    check(!image_source_allowed("https://images.openfoodfacts.org@evil.example/x"),
+          "userinfo before an at-sign cannot smuggle a host past the check");
+    check(!image_source_allowed(""), "an empty url is refused");
+    // The device checks for itself rather than trusting the backend's validation.
+    check(!image_source_allowed("https://script.google.com/x.jpg"),
+          "our backend host is not an image source");
+    // Google's user content host, so a beer Open Food Facts has no picture for
+    // can be given one by hand.
+    check(image_source_allowed("https://lh3.googleusercontent.com/pw/AP1Gcz=w150-h200"),
+          "a Google Photos link is allowed");
+    check(!image_source_allowed("https://googleusercontent.com.evil.example/x.jpg"),
+          "a Google user content lookalike is refused");
   }
 
   std::printf("\nacknowledgements\n");

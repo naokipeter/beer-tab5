@@ -67,6 +67,11 @@ size_t build_set_active(char* out, size_t capacity, const char* token,
 size_t build_my_summary(char* out, size_t capacity, const char* token,
                         const char* device, const char* resident_id);
 
+// True only for an https URL on openfoodfacts.org. Product photo URLs come from
+// the backend, which validates them too, but the device decides for itself what
+// it will connect to rather than trusting a value it was handed.
+bool image_source_allowed(const char* url);
+
 struct SyncResult {
   uint32_t revision;
   bool changed;

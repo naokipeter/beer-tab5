@@ -6,6 +6,7 @@
 #include <string.h>
 #include "api_protocol.h"
 #include "config.h"
+#include "device_storage.h"
 #include "wifi_manager.h"
 
 namespace api_client {
@@ -32,6 +33,9 @@ constexpr int kMaxRedirects = 3;
 constexpr size_t kMaxUrlBytes = 768;
 // Distinct from any HTTP status or HTTPClient error code.
 constexpr int kResponseTooLarge = -1000;
+// A 200 px product photo is a few tens of kilobytes; this is a sanity cap so a
+// wrong URL cannot fill the volume.
+constexpr size_t kMaxImageBytes = 96 * 1024;
 
 TaskHandle_t g_task = nullptr;
 char g_request[api_protocol::kMaxRequestBytes];
@@ -39,6 +43,12 @@ size_t g_request_len = 0;
 char* g_response = nullptr;
 size_t g_response_len = 0;
 int g_http_code = 0;
+
+// Set when the job is a file download rather than a JSON request.
+bool g_to_file = false;
+char g_file_path[64] = {};
+char g_fetch_url[kMaxUrlBytes] = {};
+size_t g_fetched_bytes = 0;
 
 volatile Status g_status = Status::Idle;
 volatile Error g_error = Error::None;
@@ -86,6 +96,42 @@ class BoundedSink : public Stream {
   bool overflow_ = false;
 };
 
+// Streams to a file instead of RAM, so a photo never has to fit the response
+// buffer. Bounded by a byte cap all the same: a wrong URL should not be able to
+// fill the volume.
+class FileSink : public Stream {
+ public:
+  explicit FileSink(size_t cap) : cap_(cap) {}
+
+  size_t write(uint8_t c) override { return write(&c, 1); }
+
+  size_t write(const uint8_t* data, size_t size) override {
+    if (len_ + size > cap_) {
+      overflow_ = true;
+      return size;  // keep draining; the result is discarded
+    }
+    if (!device_storage::append(g_file_path, data, size)) {
+      failed_ = true;
+      return size;
+    }
+    len_ += size;
+    return size;
+  }
+
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+
+  size_t length() const { return len_; }
+  bool bad() const { return overflow_ || failed_; }
+
+ private:
+  size_t cap_;
+  size_t len_ = 0;
+  bool overflow_ = false;
+  bool failed_ = false;
+};
+
 // One hop. Returns the HTTP status, or a negative HTTPClient error. On a
 // redirect the target is copied into `location`.
 int one_request(const char* url, bool post, char* location, size_t location_cap) {
@@ -124,6 +170,14 @@ int one_request(const char* url, bool post, char* location, size_t location_cap)
     return code;
   }
 
+  if (code > 0 && g_to_file) {
+    FileSink sink(kMaxImageBytes);
+    http.writeToStream(&sink);
+    g_fetched_bytes = sink.length();
+    http.end();
+    return sink.bad() ? kResponseTooLarge : code;
+  }
+
   if (code > 0) {
     BoundedSink sink(g_response, api_protocol::kMaxResponseBytes);
     const int written = http.writeToStream(&sink);
@@ -152,9 +206,15 @@ void perform() {
 
   char url[kMaxUrlBytes];
   char location[kMaxUrlBytes];
-  snprintf(url, sizeof(url), "%s", config::api_endpoint);
+  snprintf(url, sizeof(url), "%s", g_to_file ? g_fetch_url : config::api_endpoint);
+  g_fetched_bytes = 0;
+  if (g_to_file) {
+    // Start from empty: a half-written file from a previous attempt must not be
+    // appended to.
+    device_storage::remove(g_file_path);
+  }
 
-  bool post = true;
+  bool post = !g_to_file;
   int code = 0;
   for (int hop = 0; hop <= kMaxRedirects; ++hop) {
     code = one_request(url, post, location, sizeof(location));
@@ -186,7 +246,11 @@ void perform() {
       set_status(Status::Failed);
       return;
     }
-    if (!api_protocol::redirect_target_allowed(location)) {
+    // A photo fetch and an API call trust different hosts, so each redirect is
+    // checked against the set its own job started from rather than the union.
+    const bool allowed = g_to_file ? api_protocol::image_source_allowed(location)
+                                   : api_protocol::redirect_target_allowed(location);
+    if (!allowed) {
       Serial.printf("[api] refusing redirect to %.80s\n", location);
       snprintf(g_error_detail, sizeof(g_error_detail), "Weiterleitung abgelehnt");
       g_error = Error::HttpStatus;
@@ -238,6 +302,37 @@ bool begin() {
   return true;
 }
 
+bool fetch_to_file(const char* url, const char* path) {
+  if (!g_task || !g_response) {
+    g_error = Error::Transport;
+    return false;
+  }
+  if (__atomic_load_n(reinterpret_cast<volatile uint8_t*>(&g_status),
+                      __ATOMIC_ACQUIRE) != static_cast<uint8_t>(Status::Idle)) {
+    g_error = Error::Busy;
+    return false;
+  }
+  if (!wifi_manager::online()) {
+    g_error = Error::Offline;
+    return false;
+  }
+  if (!url || !path || !api_protocol::image_source_allowed(url)) {
+    g_error = Error::Transport;
+    return false;
+  }
+
+  snprintf(g_fetch_url, sizeof(g_fetch_url), "%s", url);
+  snprintf(g_file_path, sizeof(g_file_path), "%s", path);
+  g_to_file = true;
+  g_error = Error::None;
+  g_error_detail[0] = '\0';
+  set_status(Status::Busy);
+  xTaskNotifyGive(g_task);
+  return true;
+}
+
+size_t fetched_bytes() { return g_fetched_bytes; }
+
 bool post(const char* body, size_t len) {
   if (!config::configured) {
     g_error = Error::NotConfigured;
@@ -264,6 +359,7 @@ bool post(const char* body, size_t len) {
   memcpy(g_request, body, len);
   g_request[len] = '\0';
   g_request_len = len;
+  g_to_file = false;
   g_error = Error::None;
   g_error_detail[0] = '\0';
   set_status(Status::Busy);
