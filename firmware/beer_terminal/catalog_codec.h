@@ -4,6 +4,7 @@
 #include "product_catalog.h"
 #include "settings.h"
 #include "resident_directory.h"
+#include "purchase_log.h"
 #include "transaction_queue.h"
 
 // Serialisation for everything the device keeps across a reboot. Deliberately
@@ -25,10 +26,13 @@ inline constexpr size_t kHeaderBytes = 20;
 inline constexpr size_t kCatalogRecordBytes = 219;
 inline constexpr size_t kResidentRecordBytes = 36;
 inline constexpr size_t kQueueRecordBytes = 120;
+inline constexpr size_t kSummaryRecordBytes = 42;
 inline constexpr size_t kMaxCatalogBytes =
     kHeaderBytes + static_cast<size_t>(settings::max_products) * kCatalogRecordBytes;
 inline constexpr size_t kMaxResidentsBytes =
     kHeaderBytes + static_cast<size_t>(settings::max_residents) * kResidentRecordBytes;
+inline constexpr size_t kMaxSummaryBytes =
+    kHeaderBytes + static_cast<size_t>(settings::max_residents) * kSummaryRecordBytes;
 inline constexpr size_t kMaxQueueBytes =
     kHeaderBytes +
     static_cast<size_t>(settings::max_queued_transactions) * kQueueRecordBytes;
@@ -55,6 +59,11 @@ bool decode_catalog(const uint8_t* in, size_t len, product_catalog::Product* ite
                     uint16_t* out_seed_generation);
 bool decode_residents(const uint8_t* in, size_t len, resident_directory::Entry* entries,
                       uint8_t capacity_items, uint8_t* out_count);
+
+size_t encode_summary(const purchase_log::Tally* entries, uint8_t count, uint8_t* out,
+                      size_t capacity);
+bool decode_summary(const uint8_t* in, size_t len, purchase_log::Tally* entries,
+                    uint8_t capacity_items, uint8_t* out_count);
 
 size_t encode_queue(const transaction_queue::Entry* entries, uint8_t count,
                     uint8_t* out, size_t capacity);

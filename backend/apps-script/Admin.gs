@@ -176,24 +176,10 @@ function adminSaveResident(residentId, name, active) {
   return adminLoad();
 }
 
-/** Consumption summary, for the page. Voided purchases are excluded. */
+/** Consumption summary for the page; the device gets the same figures via sync. */
 function adminSummary() {
   requireAdmin_();
-  var sh = purchasesSheet_();
-  var last = sh.getLastRow();
-  var byResident = {};
-  if (last >= 2) {
-    var values = sh.getRange(2, 1, last - 1, PURCHASE_COLUMNS.length).getValues();
-    var iPrice = PURCHASE_COLUMNS.indexOf('price_rappen');
-    var iName = PURCHASE_COLUMNS.indexOf('resident_name');
-    var iVoid = PURCHASE_COLUMNS.indexOf('voided_at');
-    for (var i = 0; i < values.length; i++) {
-      if (values[i][iVoid]) continue;
-      var who = cleanText_(values[i][iName], 23) || '?';
-      if (!byResident[who]) byResident[who] = {name: who, drinks: 0, total_rappen: 0};
-      byResident[who].drinks++;
-      byResident[who].total_rappen += Number(values[i][iPrice]) || 0;
-    }
-  }
-  return Object.keys(byResident).map(function(k) { return byResident[k]; });
+  return consumptionSummary_().map(function(r) {
+    return {name: r.name, drinks: r.drinks, total_rappen: r.total_rappen};
+  });
 }

@@ -47,8 +47,17 @@ function doPost(e) {
 function handleSync_(request) {
   var rev = revision_();
   var since = parseInt(request.since, 10);
+
+  // The summary goes out on every sync, unlike the catalog. It changes with
+  // every purchase, while the revision only moves when a product is edited, so
+  // gating it on `changed` would leave the terminal showing stale totals.
+  var summary = consumptionSummary_();
+
   if (since === rev) {
-    return {ok: true, revision: rev, changed: false, products: [], residents: []};
+    return {
+      ok: true, revision: rev, changed: false, products: [], residents: [],
+      summary: summary
+    };
   }
 
   var products = readProducts_().filter(function(p) {
@@ -74,7 +83,10 @@ function handleSync_(request) {
   }
 
   var residents = readResidents_().slice(0, LIMITS.maxResidents);
-  return {ok: true, revision: rev, changed: true, products: products, residents: residents};
+  return {
+    ok: true, revision: rev, changed: true, products: products,
+    residents: residents, summary: summary
+  };
 }
 
 function handleRecordPurchase_(request) {

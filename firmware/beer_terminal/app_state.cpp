@@ -96,21 +96,11 @@ void reset_context() {
   g_ctx.deferred = false;
 }
 
-// The local tally mirrors what the backend holds, so the summary works offline.
-void record_locally() {
-  const resident_directory::Entry* r =
-      g_ctx.resident_index >= 0
-          ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
-          : nullptr;
-  if (r) purchase_log::record(r->id, r->name, g_ctx.price_rappen, g_ctx.free_item);
-}
+// The summary is the backend's figures plus whatever is still queued, so a
+// purchase shows up the moment it is enqueued and needs no local bookkeeping.
+void record_locally() {}
 
 void reverse_locally() {
-  const resident_directory::Entry* r =
-      g_ctx.resident_index >= 0
-          ? resident_directory::at(static_cast<uint8_t>(g_ctx.resident_index))
-          : nullptr;
-  if (r) purchase_log::unrecord(r->id, g_ctx.price_rappen, g_ctx.free_item);
   g_ctx.undo_in_flight = false;
   g_ctx.undone = true;
 }

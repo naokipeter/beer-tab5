@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "product_catalog.h"
+#include "purchase_log.h"
 #include "resident_directory.h"
 
 // The wire format between the device and the Apps Script backend. Pure: it
@@ -50,8 +51,12 @@ struct SyncResult {
   bool changed;
   uint8_t product_count;
   uint8_t resident_count;
+  uint8_t summary_count;
   product_catalog::Product products[settings::max_products];
   resident_directory::Entry residents[settings::max_residents];
+  // Acknowledged purchases per resident. Sent on every sync, unlike the catalog,
+  // because it changes with every purchase while the revision does not.
+  purchase_log::Tally summary[settings::max_residents];
 };
 
 enum class Outcome : uint8_t {
