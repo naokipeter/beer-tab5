@@ -1,5 +1,6 @@
 #include "ui_screens.h"
 #include <Arduino.h>
+#include <M5Unified.h>
 #include "ui_lvgl.h"
 #include <math.h>
 #include <stdio.h>
@@ -30,6 +31,13 @@ bool g_entry_free = false;
 lv_obj_t* g_entry_price_label = nullptr;
 lv_obj_t* g_entry_name = nullptr;
 lv_obj_t* g_keyboard = nullptr;
+
+// The battery indicator in the header. Screens are rebuilt only on a state
+// change, so a long-lived timer refreshes these rather than the screen.
+lv_obj_t* g_batt_fill = nullptr;
+lv_obj_t* g_batt_label = nullptr;
+constexpr int16_t kBattW = 46;
+constexpr int16_t kBattH = 22;
 
 lv_color_t col(uint32_t rgb) { return lv_color_hex(rgb); }
 
@@ -248,14 +256,77 @@ lv_obj_t* build_root() {
   g_entry_price_label = nullptr;
   g_entry_name = nullptr;
   g_keyboard = nullptr;
+  // Cleared with the screen that owned them; the refresh timer checks for null.
+  g_batt_fill = nullptr;
+  g_batt_label = nullptr;
   return scr;
+}
+
+// Redraws the level from M5.Power. Safe to call when no header is on screen.
+void refresh_battery() {
+  if (!g_batt_fill || !g_batt_label) return;
+
+  const int32_t level = M5.Power.getBatteryLevel();
+  const bool charging = M5.Power.isCharging() == m5::Power_Class::is_charging;
+
+  if (level < 0) {
+    // No reading rather than a wrong one: an empty bar would claim the battery
+    // is flat, which is worse than admitting we do not know.
+    lv_label_set_text(g_batt_label, "?");
+    lv_obj_set_width(g_batt_fill, 0);
+    return;
+  }
+
+  const int32_t clamped = level > 100 ? 100 : level;
+  char text[12];
+  snprintf(text, sizeof(text), "%s%ld%%", charging ? "+" : "",
+           static_cast<long>(clamped));
+  lv_label_set_text(g_batt_label, text);
+
+  const int16_t inner = kBattW - 6;
+  lv_obj_set_width(g_batt_fill, static_cast<int16_t>(inner * clamped / 100));
+  // Charging reads as its own state rather than as a low battery.
+  const uint32_t colour = charging      ? settings::theme::accent
+                          : clamped <= 10 ? settings::theme::danger
+                          : clamped <= 25 ? settings::theme::accent
+                                          : settings::theme::ok;
+  lv_obj_set_style_bg_color(g_batt_fill, col(colour), 0);
+}
+
+// A battery drawn from two panels rather than a glyph: the font subsets carry no
+// battery symbols, and a drawn one shows the actual level instead of five steps.
+void build_battery(lv_obj_t* bar) {
+  lv_obj_t* label = make_label(bar, "?", settings::theme::text_muted, &font_de_20);
+  lv_obj_align(label, LV_ALIGN_RIGHT_MID, -(kBattW + settings::grid_margin + 10), 0);
+  g_batt_label = label;
+
+  lv_obj_t* body = make_panel(bar, 0, 0, kBattW, kBattH, settings::theme::bg);
+  lv_obj_set_style_border_width(body, 2, 0);
+  lv_obj_set_style_border_color(body, col(settings::theme::text_muted), 0);
+  lv_obj_set_style_radius(body, 4, 0);
+  lv_obj_align(body, LV_ALIGN_RIGHT_MID, -settings::grid_margin, 0);
+
+  // The nub on the positive end.
+  lv_obj_t* nub = make_panel(bar, 0, 0, 3, 10, settings::theme::text_muted);
+  lv_obj_set_style_radius(nub, 1, 0);
+  lv_obj_align(nub, LV_ALIGN_RIGHT_MID, -settings::grid_margin + 3, 0);
+
+  g_batt_fill = make_panel(body, 2, 2, 0, kBattH - 8, settings::theme::ok);
+  lv_obj_set_style_radius(g_batt_fill, 2, 0);
+  lv_obj_align(g_batt_fill, LV_ALIGN_LEFT_MID, 2, 0);
+
+  refresh_battery();
 }
 
 void build_header(lv_obj_t* scr, const char* title, bool admin_gesture) {
   lv_obj_t* bar = make_panel(scr, 0, 0, settings::screen_w, settings::header_h,
                              settings::theme::bg);
   lv_obj_t* l = make_label(bar, title, settings::theme::text, &font_de_28);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+  // Leave room for the indicator rather than running the title under it.
+  lv_obj_set_width(l, settings::screen_w - 2 * settings::grid_margin - kBattW - 90);
   lv_obj_align(l, LV_ALIGN_LEFT_MID, settings::grid_margin, 0);
+  build_battery(bar);
   if (admin_gesture) {
     lv_obj_add_flag(bar, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(bar, on_header_long_press, LV_EVENT_LONG_PRESSED, nullptr);
@@ -932,7 +1003,13 @@ void build_sleeping() {
 
 }  // namespace
 
-void begin() { show(app_state::state()); }
+void begin() {
+  // One timer for the life of the program. Battery level moves slowly, and the
+  // screen is only rebuilt on a state change, so it would otherwise go stale on
+  // a screen that sits for a while.
+  lv_timer_create([](lv_timer_t*) { refresh_battery(); }, 5000, nullptr);
+  show(app_state::state());
+}
 
 void show(State current) {
   switch (current) {
