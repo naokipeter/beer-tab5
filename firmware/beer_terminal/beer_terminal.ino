@@ -68,15 +68,11 @@ void loop() {
   wifi_manager::update(now);
   backend::update(now);
   app_state::update(now);
-  const uint32_t idle_ms = display_ui::update();
+  display_ui::update();
   // Persist off the UI event path, so a flash write never delays a touch.
   product_catalog::flush();
   resident_directory::flush();
   transaction_queue::flush();
   purchase_log::flush();
-
-  // Sleep only as long as LVGL says it has nothing to do. A fixed delay added
-  // that much latency to every touch; capped so network and queue work still
-  // gets its turn promptly.
-  delay(idle_ms > 10 ? 10 : (idle_ms < 1 ? 1 : idle_ms));
+  delay(5);
 }

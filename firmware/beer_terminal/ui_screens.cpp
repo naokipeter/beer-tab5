@@ -871,7 +871,6 @@ void build_sleeping() {
 void begin() { show(app_state::state()); }
 
 void show(State current) {
-  const uint32_t started = millis();
   switch (current) {
     case State::Sleeping:          build_sleeping();        break;
     case State::Waking:                                     break;
@@ -888,14 +887,6 @@ void show(State current) {
     case State::Summary:           build_summary();         break;
     case State::Error:             build_error();           break;
     case State::Admin:             build_admin();           break;
-  }
-  // How long building the object tree took. The pixels appear one refresh
-  // later; if this number is small and the screen still feels slow, the cost is
-  // in rendering, not here.
-  const uint32_t took = millis() - started;
-  if (took > 20) {
-    Serial.printf("[ui] %s built in %lu ms\n", app_state::state_name(current),
-                  static_cast<unsigned long>(took));
   }
 }
 
