@@ -15,6 +15,7 @@ enum class State : uint8_t {
   NewProduct,
   SelectingUser,
   SelectingArchived,  // restore an archived beer before offering the new form
+  ManageProduct,      // edit the price, or archive, from one place
   ConfirmArchive,     // confirm removing a beer from the fridge grid
   Submitting,
   Undoing,            // reversing the purchase just recorded
@@ -32,7 +33,9 @@ enum class Event : uint8_t {
   ProductRestored,
   NewProductReady,   // name and price entered for an ad hoc product
   ResidentSelected,
-  ArchiveRequested,  // the archive button on the resident screen
+  ManageRequested,   // the manage button on the resident screen
+  ArchiveRequested,
+  PriceChanged,
   ArchiveConfirmed,
   ShowSummary,
   SubmitSucceeded,
@@ -98,6 +101,9 @@ void queue_product_change(int8_t storage_index, bool active);
 // Queues a beer added at the fridge so the spreadsheet learns about it. Without
 // this the product existed only on this terminal.
 void queue_product_create(int8_t storage_index);
+
+// Applies a new price locally and queues it for the backend.
+void change_price(int8_t storage_index, int32_t price_rappen, bool free_item);
 
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);

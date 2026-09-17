@@ -169,6 +169,16 @@ const Product* at_storage(int8_t storage_index) {
   return &g_items[storage_index];
 }
 
+bool set_price(int8_t storage_index, int32_t price_rappen, bool free_item) {
+  if (storage_index < 0 || storage_index >= static_cast<int8_t>(g_count)) return false;
+  if (price_rappen < 0 || price_rappen > 9999) return false;
+  if (!free_item && price_rappen == 0) return false;
+  g_items[storage_index].price_rappen = free_item ? 0 : price_rappen;
+  g_items[storage_index].free_item = free_item;
+  g_dirty = true;
+  return true;
+}
+
 bool archive(int8_t storage_index) {
   if (storage_index < 0 || storage_index >= static_cast<int8_t>(g_count)) return false;
   if (!g_items[storage_index].active) return false;

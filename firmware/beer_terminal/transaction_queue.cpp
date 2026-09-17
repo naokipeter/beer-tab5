@@ -69,7 +69,7 @@ void pop() {
 bool has_product_changes() {
   for (uint8_t i = 0; i < g_count; ++i) {
     if (g_items[i].kind == Kind::Archive || g_items[i].kind == Kind::Restore ||
-        g_items[i].kind == Kind::Create) {
+        g_items[i].kind == Kind::Create || g_items[i].kind == Kind::ChangePrice) {
       return true;
     }
   }

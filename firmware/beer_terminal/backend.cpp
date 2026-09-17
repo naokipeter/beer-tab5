@@ -186,17 +186,22 @@ bool send_queued_now() {
 
   // Say what is going out. A queue that looks stuck and a queue whose entries
   // are being refused one by one look identical from the outside otherwise.
-  static const char* const kKindName[] = {"purchase", "void", "archive", "restore",
-                                          "create"};
+  static const char* const kKindName[] = {"purchase", "void",   "archive",
+                                          "restore",  "create", "price"};
   const uint8_t kind_index = static_cast<uint8_t>(e->kind);
   Serial.printf("[queue] sending %s (%s), %u left\n",
-                kind_index < 5 ? kKindName[kind_index] : "?",
+                kind_index < 6 ? kKindName[kind_index] : "?",
                 e->product_name[0] ? e->product_name : e->transaction_id,
                 static_cast<unsigned>(transaction_queue::count()));
 
   size_t len;
   Op op;
-  if (e->kind == transaction_queue::Kind::Create) {
+  if (e->kind == transaction_queue::Kind::ChangePrice) {
+    len = api_protocol::build_change_price(
+        g_request, sizeof(g_request), config::device_token, settings::device_id,
+        e->barcode, e->product_name, e->price_rappen, e->free_item);
+    op = Op::Purchase;  // same handling: acknowledged, then popped
+  } else if (e->kind == transaction_queue::Kind::Create) {
     len = api_protocol::build_create_product(
         g_request, sizeof(g_request), config::device_token, settings::device_id,
         e->barcode, e->product_name, e->price_rappen, e->free_item);

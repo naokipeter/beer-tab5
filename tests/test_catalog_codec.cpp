@@ -262,6 +262,24 @@ int main() {
               std::strcmp(back[0].product_name, "Hausbier") == 0,
           "a created product survives with its price");
 
+    // A price change carries the new amount and the free flag.
+    transaction_queue::Entry pc[2] = {};
+    std::snprintf(pc[0].transaction_id, sizeof(pc[0].transaction_id), "p1");
+    std::snprintf(pc[0].product_name, sizeof(pc[0].product_name), "Aktionsbier");
+    pc[0].price_rappen = 150;
+    pc[0].kind = transaction_queue::Kind::ChangePrice;
+    std::snprintf(pc[1].transaction_id, sizeof(pc[1].transaction_id), "p2");
+    pc[1].free_item = true;
+    pc[1].kind = transaction_queue::Kind::ChangePrice;
+    const size_t pn = catalog_codec::encode_queue(pc, 2, kb.data(), kb.size());
+    uint8_t ppc = 0;
+    catalog_codec::decode_queue(kb.data(), pn, back,
+                                settings::max_queued_transactions, &ppc);
+    check(ppc == 2 && back[0].kind == transaction_queue::Kind::ChangePrice &&
+              back[0].price_rappen == 150 && !back[0].free_item &&
+              back[1].free_item,
+          "a price change survives with its amount and free flag");
+
     // An unknown kind must never become a reversal.
     std::vector<uint8_t> weird = kb;
     weird[catalog_codec::kHeaderBytes + catalog_codec::kQueueRecordBytes - 1] = 99;

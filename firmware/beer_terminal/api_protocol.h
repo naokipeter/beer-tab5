@@ -48,6 +48,12 @@ size_t build_create_product(char* out, size_t capacity, const char* token,
                             const char* product_name, int32_t price_rappen,
                             bool free_item);
 
+// {"action":"changePrice","barcode":..,"name":..,"price_rappen":..,"free":bool}
+size_t build_change_price(char* out, size_t capacity, const char* token,
+                          const char* device, const char* barcode,
+                          const char* product_name, int32_t price_rappen,
+                          bool free_item);
+
 // {"action":"setActive","barcode":..,"name":..,"active":bool}
 // Shelves or archives a product. Identified by barcode when it has one, by name
 // otherwise, which is how a product added at the terminal is found.

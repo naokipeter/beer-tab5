@@ -164,6 +164,12 @@ void on_free(lv_event_t*) {
   refresh_entry_price();
 }
 
+void on_price_confirm(lv_event_t*) {
+  if (!g_entry_free && g_entry_rappen <= 0) return;  // needs a price or Gratis
+  app_state::change_price(app_state::context().archive_storage_index, g_entry_rappen,
+                          g_entry_free);
+}
+
 void on_new_product_confirm(lv_event_t*) {
   char name[40];
   const char* typed = g_entry_name ? lv_textarea_get_text(g_entry_name) : "";
@@ -377,6 +383,26 @@ void build_product_tile(lv_obj_t* scr, const product_catalog::Product& p,
   }
 }
 
+// The numeric pad for entering a price in rappen. Used by the new-product form
+// and by the manage screen.
+void build_price_keypad(lv_obj_t* scr) {
+  static const char* kKeys[] = {"1", "2", "3", "\n",
+                                "4", "5", "6", "\n",
+                                "7", "8", "9", "\n",
+                                "C", "0", ""};
+  lv_obj_t* pad = lv_buttonmatrix_create(scr);
+  lv_buttonmatrix_set_map(pad, kKeys);
+  lv_obj_set_pos(pad, 680, settings::header_h + 8);
+  lv_obj_set_size(pad, 584, 400);
+  lv_obj_set_style_bg_opa(pad, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(pad, 0, 0);
+  lv_obj_set_style_text_font(pad, &font_de_32, LV_PART_ITEMS);
+  lv_obj_set_style_bg_color(pad, col(settings::theme::surface), LV_PART_ITEMS);
+  lv_obj_set_style_text_color(pad, col(settings::theme::text), LV_PART_ITEMS);
+  lv_obj_set_style_radius(pad, 6, LV_PART_ITEMS);
+  lv_obj_add_event_cb(pad, on_keypad, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
 // ---- screens ------------------------------------------------------------
 
 void build_catalog() {
@@ -437,10 +463,10 @@ void build_resident() {
       make_button(scr, r->name, x, y, g.tile_w, g.tile_h, settings::theme::surface,
                   settings::theme::text, on_resident, as_ud(i));
     } else {
-      make_button(scr, "Bier archivieren", x, y, g.tile_w, g.tile_h,
-                  settings::theme::surface_alt, settings::theme::danger,
+      make_button(scr, "Bier verwalten", x, y, g.tile_w, g.tile_h,
+                  settings::theme::surface_alt, settings::theme::accent,
                   on_event_button,
-                  as_ud(static_cast<uintptr_t>(Event::ArchiveRequested)));
+                  as_ud(static_cast<uintptr_t>(Event::ManageRequested)));
     }
   }
 
@@ -476,6 +502,53 @@ void build_archived() {
                     settings::theme::surface_alt, settings::theme::text_muted,
                     "Neues Bier anlegen", on_event_button,
                     as_ud(static_cast<uintptr_t>(Event::CreateNewProduct)),
+                    settings::theme::accent, 0x12120F);
+}
+
+void build_manage_product() {
+  lv_obj_t* scr = build_root();
+  const app_state::Context& ctx = app_state::context();
+  const product_catalog::Product* p =
+      product_catalog::at_storage(ctx.archive_storage_index);
+
+  char current[32];
+  if (p) {
+    product_catalog::format_price(*p, current, sizeof(current));
+  } else {
+    snprintf(current, sizeof(current), "?");
+  }
+  char title[96];
+  snprintf(title, sizeof(title), "%s  -  %s", p ? p->name : ctx.product_name, current);
+  build_header(scr, title, false);
+
+  // Start from the current price, so a small correction is a couple of taps
+  // rather than retyping the whole amount.
+  g_entry_rappen = p ? p->price_rappen : 0;
+  g_entry_free = p ? p->free_item : false;
+
+  lv_obj_t* prompt = make_label(scr, "Neuer Preis", settings::theme::text_muted,
+                                &font_de_20);
+  lv_obj_set_pos(prompt, settings::grid_margin, settings::header_h + 8);
+
+  char shown[32];
+  product_catalog::format_rappen(g_entry_rappen, g_entry_free, shown, sizeof(shown));
+  g_entry_price_label = make_label(scr, shown, settings::theme::accent, &font_de_48);
+  lv_obj_set_pos(g_entry_price_label, settings::grid_margin, settings::header_h + 40);
+
+  make_button(scr, "Gratis", settings::grid_margin, settings::header_h + 130, 300, 80,
+              settings::theme::ok, 0xFFFFFF, on_free, nullptr);
+
+  make_button(scr, "Bier archivieren", settings::grid_margin,
+              settings::header_h + 240, 400, 90, settings::theme::surface_alt,
+              settings::theme::danger, on_event_button,
+              as_ud(static_cast<uintptr_t>(Event::ArchiveRequested)));
+
+  build_price_keypad(scr);
+
+  build_footer_pair(scr, "Zurück", on_event_button,
+                    as_ud(static_cast<uintptr_t>(Event::Cancel)),
+                    settings::theme::surface_alt, settings::theme::text,
+                    "Preis speichern", on_price_confirm, nullptr,
                     settings::theme::accent, 0x12120F);
 }
 
@@ -534,21 +607,7 @@ void build_new_product() {
   make_button(scr, "Gratis", settings::grid_margin, settings::header_h + 170, 300, 80,
               settings::theme::ok, 0xFFFFFF, on_free, nullptr);
 
-  static const char* kKeys[] = {"1", "2", "3", "\n",
-                                "4", "5", "6", "\n",
-                                "7", "8", "9", "\n",
-                                "C", "0", ""};
-  lv_obj_t* pad = lv_buttonmatrix_create(scr);
-  lv_buttonmatrix_set_map(pad, kKeys);
-  lv_obj_set_pos(pad, 680, settings::header_h + 8);
-  lv_obj_set_size(pad, 584, 400);
-  lv_obj_set_style_bg_opa(pad, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_width(pad, 0, 0);
-  lv_obj_set_style_text_font(pad, &font_de_32, LV_PART_ITEMS);
-  lv_obj_set_style_bg_color(pad, col(settings::theme::surface), LV_PART_ITEMS);
-  lv_obj_set_style_text_color(pad, col(settings::theme::text), LV_PART_ITEMS);
-  lv_obj_set_style_radius(pad, 6, LV_PART_ITEMS);
-  lv_obj_add_event_cb(pad, on_keypad, LV_EVENT_VALUE_CHANGED, nullptr);
+  build_price_keypad(scr);
 
   build_footer_pair(scr, "Abbrechen", on_event_button,
                     as_ud(static_cast<uintptr_t>(Event::Cancel)),
@@ -883,6 +942,7 @@ void show(State current) {
     case State::LookingUp:         build_submitting();      break;
     case State::ProductFound:      build_catalog();         break;
     case State::SelectingArchived: build_archived();        break;
+    case State::ManageProduct:     build_manage_product();  break;
     case State::ConfirmArchive:    build_confirm_archive(); break;
     case State::NewProduct:        build_new_product();     break;
     case State::SelectingUser:     build_resident();        break;

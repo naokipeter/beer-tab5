@@ -49,6 +49,11 @@ int8_t storage_index_of_active(uint8_t index);
 int8_t storage_index_of_archived(uint8_t index);
 const Product* at_storage(int8_t storage_index);
 
+// Changes a price locally. Past purchases keep the price they were booked at,
+// which lives in the Purchases sheet, so a promotion never rewrites what anyone
+// already owes.
+bool set_price(int8_t storage_index, int32_t price_rappen, bool free_item);
+
 bool archive(int8_t storage_index);
 // Fails when the grid is already full; the caller must archive something first.
 bool restore(int8_t storage_index);

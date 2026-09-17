@@ -68,7 +68,7 @@ never as a reversal.
 
 | Build | Result | Flash | Static RAM |
 |---|---|---:|---:|
-| `./tools/build.sh` (C++17) | PASS | 1,756,148 bytes | 79,352 bytes |
+| `./tools/build.sh` (C++17) | PASS | 1,757,810 bytes | 79,352 bytes |
 
 ## Requires the physical Tab5
 
@@ -81,11 +81,39 @@ never as a reversal.
    waiting, and the sheet updates once the network returns.
 5. During step 4, confirm the beer does **not** reappear when a sync runs while
    the change is still queued.
+6. Tap a tile, then `Bier verwalten`. The header shows the current price and the
+   keypad starts from it. Change it, save, and confirm `price_rappen` changes in
+   the sheet while older `Purchases` rows keep their original amounts.
+7. From the manage screen, archive and then cancel the confirmation: it must
+   return to the manage screen, not to the resident list.
+
+## Step 2: the Bier verwalten screen
+
+The eighth button on the resident screen is now **Bier verwalten** rather than
+**Bier archivieren**. It opens a screen that does both: change the price, or
+archive, from the place where the beer is already selected.
+
+The header shows the beer and its current price. The keypad starts **from that
+price**, so a promotion is a couple of taps rather than retyping the amount. It
+is the same keypad the new-product form uses, factored out rather than copied.
+
+Archiving moved one level deeper, which makes a mis-tap cheaper than before: the
+button sits beside seven resident names, and reaching the confirmation now takes
+two deliberate presses. Cancelling the confirmation returns to the manage screen,
+not past it.
+
+Prices travel through the transaction queue as `Kind::ChangePrice`, the same
+durable path as everything else, so a change made without Wi-Fi is not lost.
+
+### Prices are open to anyone at the fridge
+
+No admin gate, by choice: a promotion happens often enough that a lock costs more
+than it protects in a household of seven, and every change lands in the sheet
+with a timestamp. Past purchases keep the price they were booked at, so changing
+one never rewrites what anyone owes.
 
 ## Still to come in this milestone
 
-- The **Bier verwalten** screen replacing the archive button: edit the price
-  and/or archive, from the same place.
 - Manual EAN entry.
 - A resident editing UI; `adminSaveResident` exists but nothing calls it, so
   residents are still maintained directly in the sheet.

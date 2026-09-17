@@ -209,6 +209,7 @@ const char* state_name(State s) {
     case State::SelectingProduct: return "SELECTING_PRODUCT";
     case State::Undoing:          return "UNDOING";
     case State::SelectingArchived: return "SELECTING_ARCHIVED";
+    case State::ManageProduct:    return "MANAGE_PRODUCT";
     case State::ConfirmArchive:   return "CONFIRM_ARCHIVE";
     case State::Summary:          return "SUMMARY";
     case State::LookingUp:        return "LOOKING_UP";
@@ -297,10 +298,16 @@ void dispatch(Event e) {
         backend::clear();
         enter(State::Submitting);
       }
-      else if (e == Event::ArchiveRequested) {
+      else if (e == Event::ManageRequested) {
         g_ctx.archive_storage_index = g_ctx.product_index;
-        enter(State::ConfirmArchive);
+        enter(State::ManageProduct);
       } else if (e == Event::Cancel)    { reset_context(); enter(State::SelectingProduct); }
+      break;
+
+    case State::ManageProduct:
+      if (e == Event::ArchiveRequested)  enter(State::ConfirmArchive);
+      else if (e == Event::PriceChanged) { reset_context(); enter(State::SelectingProduct); }
+      else if (e == Event::Cancel)       enter(State::SelectingUser);
       break;
 
     case State::ConfirmArchive:
@@ -313,8 +320,8 @@ void dispatch(Event e) {
         reset_context();
         enter(State::SelectingProduct);
       } else if (e == Event::Cancel) {
-        g_ctx.archive_storage_index = -1;
-        enter(State::SelectingUser);
+        // Back to where the archive was started from, not past it.
+        enter(State::ManageProduct);
       }
       break;
 
@@ -452,6 +459,13 @@ void queue_product_change(int8_t storage_index, bool active) {
   if (!p) return;
   queue_product_entry(*p, active ? transaction_queue::Kind::Restore
                                  : transaction_queue::Kind::Archive);
+}
+
+void change_price(int8_t storage_index, int32_t price_rappen, bool free_item) {
+  if (!product_catalog::set_price(storage_index, price_rappen, free_item)) return;
+  const product_catalog::Product* p = product_catalog::at_storage(storage_index);
+  if (p) queue_product_entry(*p, transaction_queue::Kind::ChangePrice);
+  dispatch(Event::PriceChanged);
 }
 
 void queue_product_create(int8_t storage_index) {

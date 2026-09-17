@@ -113,6 +113,21 @@ size_t build_create_product(char* out, size_t capacity, const char* token,
   return serialise(doc, out, capacity);
 }
 
+size_t build_change_price(char* out, size_t capacity, const char* token,
+                          const char* device, const char* barcode,
+                          const char* product_name, int32_t price_rappen,
+                          bool free_item) {
+  JsonDocument doc;
+  doc["action"] = "changePrice";
+  doc["token"] = token;
+  doc["device"] = device;
+  doc["barcode"] = barcode ? barcode : "";
+  doc["name"] = product_name ? product_name : "";
+  doc["price_rappen"] = price_rappen;
+  doc["free"] = free_item;
+  return serialise(doc, out, capacity);
+}
+
 size_t build_set_active(char* out, size_t capacity, const char* token,
                         const char* device, const char* barcode,
                         const char* product_name, bool active) {
