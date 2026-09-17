@@ -7,24 +7,36 @@
 namespace display_ui {
 namespace {
 
-// Partial render mode: LVGL draws into these, we blit each area to the panel.
-// 40 lines is a compromise between blit count and PSRAM footprint (~100 KB each).
-constexpr int16_t kBufferLines = 40;
+// Partial render mode: LVGL draws into this, we blit each area to the panel.
+//
+// The buffer lives in *internal* RAM. LVGL fills it pixel by pixel, and PSRAM is
+// several times slower per access, so rendering there dominated the time a
+// screen took to appear. Drawing internally and blitting once to the panel's
+// PSRAM framebuffer is the cheaper way round.
+//
+// A single buffer, not two: the flush is synchronous — pushImage returns before
+// lv_display_flush_ready is called — so a second buffer would never be rendered
+// into while the first was in flight. It would cost 80 KB of internal RAM for
+// nothing.
+constexpr int16_t kBufferLines = 32;
 constexpr size_t kBufferPixels = static_cast<size_t>(settings::screen_w) * kBufferLines;
 constexpr size_t kBufferBytes = kBufferPixels * sizeof(uint16_t);
 
 lv_display_t* g_display = nullptr;
 lv_indev_t* g_touch = nullptr;
-uint16_t* g_buf1 = nullptr;
-uint16_t* g_buf2 = nullptr;
+uint16_t* g_buf = nullptr;
 
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
   // LVGL renders native-endian RGB565, which matches lgfx::rgb565_t. If colours
   // come out inverted on hardware, this is the line to swap for swap565_t.
+  // startWrite/endWrite brackets the transfer so the panel is set up once per
+  // area rather than once per call inside pushImage.
+  M5.Display.startWrite();
   M5.Display.pushImage(area->x1, area->y1, w, h,
                        reinterpret_cast<const lgfx::rgb565_t*>(px_map));
+  M5.Display.endWrite();
   lv_display_flush_ready(disp);
 }
 
@@ -58,12 +70,17 @@ bool begin() {
   lv_tick_set_cb(tick_cb);
   lv_log_register_print_cb(log_cb);
 
-  // Draw buffers go to PSRAM; internal RAM is reserved for the network and
-  // decoder work that arrives in later milestones.
-  g_buf1 = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_SPIRAM));
-  g_buf2 = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_SPIRAM));
-  if (!g_buf1 || !g_buf2) {
-    Serial.printf("[ui] draw buffer allocation failed (%u bytes each)\n",
+  // Internal RAM if it fits, PSRAM otherwise: a slow display beats none.
+  g_buf = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_INTERNAL));
+  if (g_buf) {
+    Serial.printf("[ui] draw buffer in internal RAM (%u bytes)\n",
+                  static_cast<unsigned>(kBufferBytes));
+  } else {
+    g_buf = static_cast<uint16_t*>(heap_caps_malloc(kBufferBytes, MALLOC_CAP_SPIRAM));
+    Serial.println("[ui] draw buffer fell back to PSRAM; redraws will be slower");
+  }
+  if (!g_buf) {
+    Serial.printf("[ui] draw buffer allocation failed (%u bytes)\n",
                   static_cast<unsigned>(kBufferBytes));
     return false;
   }
@@ -71,7 +88,7 @@ bool begin() {
   g_display = lv_display_create(settings::screen_w, settings::screen_h);
   if (!g_display) return false;
   lv_display_set_flush_cb(g_display, flush_cb);
-  lv_display_set_buffers(g_display, g_buf1, g_buf2, kBufferBytes,
+  lv_display_set_buffers(g_display, g_buf, nullptr, kBufferBytes,
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
 
   g_touch = lv_indev_create();
@@ -85,6 +102,6 @@ bool begin() {
   return true;
 }
 
-void update() { lv_timer_handler(); }
+uint32_t update() { return lv_timer_handler(); }
 
 }  // namespace display_ui
