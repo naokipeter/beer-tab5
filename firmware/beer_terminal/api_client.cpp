@@ -42,6 +42,13 @@ int g_http_code = 0;
 
 volatile Status g_status = Status::Idle;
 volatile Error g_error = Error::None;
+// Bumped for every job and by abandon(). The worker publishes its result only
+// if the id it started with is still current, so a late answer from a request
+// nobody waits for any more cannot overwrite a newer one.
+volatile uint32_t g_job_id = 0;
+// Separate from the status: after abandon() the status is Idle but the worker
+// still owns g_request and g_response.
+volatile bool g_worker_busy = false;
 // Formatted messages need somewhere to live, since error_text returns a pointer.
 char g_error_detail[64] = {};
 
@@ -49,6 +56,15 @@ void set_status(Status s) {
   // Release: the buffers are written before the status the main loop polls.
   __atomic_store_n(reinterpret_cast<volatile uint8_t*>(&g_status),
                    static_cast<uint8_t>(s), __ATOMIC_RELEASE);
+}
+
+// Publishes only if this job is still the one being waited on.
+void finish_job(uint32_t job, Status s) {
+  if (__atomic_load_n(&g_job_id, __ATOMIC_ACQUIRE) != job) {
+    Serial.println("[api] discarding the result of an abandoned request");
+    return;
+  }
+  set_status(s);
 }
 
 // A fixed-capacity sink for HTTPClient::writeToStream. Reading the raw stream
@@ -145,7 +161,7 @@ int one_request(const char* url, bool post, char* location, size_t location_cap)
   return code;
 }
 
-void perform() {
+void perform(uint32_t job) {
   g_response_len = 0;
   g_http_code = 0;
   if (g_response) g_response[0] = '\0';
@@ -163,7 +179,7 @@ void perform() {
     if (code == kResponseTooLarge) {
       snprintf(g_error_detail, sizeof(g_error_detail), "Antwort zu gross");
       g_error = Error::TooLarge;
-      set_status(Status::Failed);
+      finish_job(job, Status::Failed);
       return;
     }
 
@@ -173,7 +189,7 @@ void perform() {
       snprintf(g_error_detail, sizeof(g_error_detail), "%s",
                HTTPClient::errorToString(code).c_str());
       g_error = Error::Transport;
-      set_status(Status::Failed);
+      finish_job(job, Status::Failed);
       return;
     }
 
@@ -183,14 +199,14 @@ void perform() {
       Serial.println("[api] too many redirects");
       snprintf(g_error_detail, sizeof(g_error_detail), "Zu viele Weiterleitungen");
       g_error = Error::HttpStatus;
-      set_status(Status::Failed);
+      finish_job(job, Status::Failed);
       return;
     }
     if (!api_protocol::redirect_target_allowed(location)) {
       Serial.printf("[api] refusing redirect to %.80s\n", location);
       snprintf(g_error_detail, sizeof(g_error_detail), "Weiterleitung abgelehnt");
       g_error = Error::HttpStatus;
-      set_status(Status::Failed);
+      finish_job(job, Status::Failed);
       return;
     }
     // The body is deliberately not resent: the redirect drops to GET, so the
@@ -204,18 +220,21 @@ void perform() {
                   static_cast<unsigned>(g_response_len), g_response);
     snprintf(g_error_detail, sizeof(g_error_detail), "HTTP %d vom Server", code);
     g_error = Error::HttpStatus;
-    set_status(Status::Failed);
+    finish_job(job, Status::Failed);
     return;
   }
 
   g_error = Error::None;
-  set_status(Status::Done);
+  finish_job(job, Status::Done);
 }
 
 void worker(void*) {
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    perform();
+    const uint32_t job = __atomic_load_n(&g_job_id, __ATOMIC_ACQUIRE);
+    g_worker_busy = true;
+    perform(job);
+    g_worker_busy = false;
   }
 }
 
@@ -243,8 +262,8 @@ bool post(const char* body, size_t len) {
     g_error = Error::NotConfigured;
     return false;
   }
-  if (!g_task || !g_response) {
-    g_error = Error::Transport;
+  if (!g_task || !g_response || g_worker_busy) {
+    g_error = g_worker_busy ? Error::Busy : Error::Transport;
     return false;
   }
   if (__atomic_load_n(reinterpret_cast<volatile uint8_t*>(&g_status),
@@ -282,6 +301,17 @@ size_t response_len() { return g_response_len; }
 int http_code() { return g_http_code; }
 
 void reset() { set_status(Status::Idle); }
+
+void abandon() {
+  // The worker cannot be interrupted mid-handshake, so invalidate its job
+  // instead and let it discard its own result when it eventually returns.
+  __atomic_add_fetch(&g_job_id, 1, __ATOMIC_RELEASE);
+  g_error = Error::Transport;
+  snprintf(g_error_detail, sizeof(g_error_detail), "Zeitüberschreitung");
+  set_status(Status::Idle);
+}
+
+bool worker_busy() { return g_worker_busy; }
 
 const char* error_text() {
   switch (g_error) {
