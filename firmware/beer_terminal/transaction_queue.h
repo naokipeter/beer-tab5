@@ -11,7 +11,14 @@
 // recognise a replay and record the drink exactly once.
 namespace transaction_queue {
 
-enum class Kind : uint8_t { Purchase = 0, Void = 1 };
+// Stored as a byte, so the values are fixed. Anything unrecognised decodes as a
+// Purchase, which is the only kind that must never be silently lost.
+enum class Kind : uint8_t {
+  Purchase = 0,
+  Void = 1,
+  Archive = 2,   // take a beer off the fridge grid
+  Restore = 3,   // put it back
+};
 
 struct Entry {
   char transaction_id[24];
@@ -51,6 +58,11 @@ bool remove_purchase(const char* transaction_id);
 
 // True if this id is still waiting to be sent.
 bool contains(const char* transaction_id);
+
+// True while any product change is waiting. A sync must not overwrite the
+// catalog then: the server has not seen the change yet, so its answer is stale
+// and would undo it on screen.
+bool has_product_changes();
 
 // Writes the queue if it changed. Driven from the main loop, like the catalog.
 void flush();

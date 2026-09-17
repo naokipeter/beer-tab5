@@ -66,6 +66,15 @@ void pop() {
   g_dirty = true;
 }
 
+bool has_product_changes() {
+  for (uint8_t i = 0; i < g_count; ++i) {
+    if (g_items[i].kind == Kind::Archive || g_items[i].kind == Kind::Restore) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool contains(const char* transaction_id) {
   if (!transaction_id) return false;
   for (uint8_t i = 0; i < g_count; ++i) {

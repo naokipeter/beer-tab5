@@ -227,6 +227,25 @@ int main() {
               std::strcmp(back[2].transaction_id, "fridge-01-abc-3") == 0,
           "order is preserved");
 
+    // Product changes travel through the same queue, so their kind must survive
+    // too — and an unknown byte must fall back to Purchase, never to a reversal.
+    transaction_queue::Entry k[3] = {};
+    std::snprintf(k[0].transaction_id, sizeof(k[0].transaction_id), "t1");
+    k[0].kind = transaction_queue::Kind::Archive;
+    std::snprintf(k[1].transaction_id, sizeof(k[1].transaction_id), "t2");
+    k[1].kind = transaction_queue::Kind::Restore;
+    std::snprintf(k[2].transaction_id, sizeof(k[2].transaction_id), "t3");
+    k[2].kind = transaction_queue::Kind::Purchase;
+    std::vector<uint8_t> kb(catalog_codec::max_queue_bytes());
+    const size_t kn = catalog_codec::encode_queue(k, 3, kb.data(), kb.size());
+    uint8_t kc = 0;
+    catalog_codec::decode_queue(kb.data(), kn, back,
+                                settings::max_queued_transactions, &kc);
+    check(kc == 3 && back[0].kind == transaction_queue::Kind::Archive &&
+              back[1].kind == transaction_queue::Kind::Restore &&
+              back[2].kind == transaction_queue::Kind::Purchase,
+          "archive and restore survive as themselves");
+
     std::vector<uint8_t> bad = qb;
     bad[n / 2] ^= 0x01;
     uint8_t c2 = 42;

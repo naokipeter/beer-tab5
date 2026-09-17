@@ -30,6 +30,10 @@ function doPost(e) {
         return jsonOut_(handleVoidPurchase_(request));
       case 'mySummary':
         return jsonOut_(handleMySummary_(request));
+      case 'setActive':
+        return jsonOut_(handleSetActive_(request));
+      case 'changePrice':
+        return jsonOut_(handleChangePrice_(request));
       default:
         return jsonOut_({ok: false, error: 'Unbekannte Aktion'});
     }
@@ -110,6 +114,35 @@ function handleMySummary_(request) {
     total_rappen: total,
     products: rows
   };
+}
+
+/**
+ * Shelving and archiving from the terminal. Deliberately open to anyone holding
+ * the device token rather than an admin: this is the fridge changing, and the
+ * household does it several times a week. Every change lands in the sheet with
+ * a timestamp, which is where it can be reviewed.
+ */
+function handleSetActive_(request) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return {ok: false, retry: true, error: 'Server beschaeftigt'};
+  try {
+    setProductActive_(request.barcode, request.name, request.active === true);
+    return {ok: true};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleChangePrice_(request) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return {ok: false, retry: true, error: 'Server beschaeftigt'};
+  try {
+    setProductPrice_(request.barcode, request.name, request.price_rappen,
+                     request.free === true);
+    return {ok: true};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleRecordPurchase_(request) {

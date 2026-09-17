@@ -103,6 +103,14 @@ void apply_sync() {
                    "Redeploy the Apps Script.");
   }
 
+  // A product change of ours has not reached the server yet, so its catalog is
+  // stale by definition. Applying it would undo the change on screen and then
+  // re-apply it a sync later, which looks like the terminal fighting itself.
+  if (transaction_queue::has_product_changes()) {
+    Serial.println("[sync] product changes still queued; keeping the local catalog");
+    return;
+  }
+
   if (!g_sync.changed && g_sync.revision == product_catalog::revision()) {
     Serial.printf("[sync] unchanged at revision %lu, %u summary row(s)\n",
                   static_cast<unsigned long>(g_sync.revision),
@@ -178,7 +186,14 @@ bool send_queued_now() {
 
   size_t len;
   Op op;
-  if (e->kind == transaction_queue::Kind::Void) {
+  if (e->kind == transaction_queue::Kind::Archive ||
+      e->kind == transaction_queue::Kind::Restore) {
+    len = api_protocol::build_set_active(
+        g_request, sizeof(g_request), config::device_token, settings::device_id,
+        e->barcode, e->product_name,
+        e->kind == transaction_queue::Kind::Restore);
+    op = Op::Purchase;  // same handling: acknowledged, then popped
+  } else if (e->kind == transaction_queue::Kind::Void) {
     len = api_protocol::build_void_purchase(g_request, sizeof(g_request),
                                             config::device_token, settings::device_id,
                                             e->transaction_id);

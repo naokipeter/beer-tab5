@@ -173,6 +173,40 @@ function findProductRow_(barcode, name) {
   return 0;
 }
 
+/**
+ * Shelves or archives a product. Shared by the management page and the terminal
+ * so the two cannot enforce different rules. Caller holds the lock.
+ */
+function setProductActive_(barcode, name, active) {
+  var b = cleanText_(barcode, LIMITS.maxBarcodeChars);
+  var n = cleanText_(name, LIMITS.maxNameChars);
+  if (active === true) assertRoomForActive_(b, n);
+  var row = findProductRow_(b, n);
+  if (row <= 0) throw new Error('Produkt nicht gefunden');
+  var sh = productsSheet_();
+  sh.getRange(row, PRODUCT_COLUMNS.indexOf('active') + 1).setValue(active === true);
+  sh.getRange(row, PRODUCT_COLUMNS.indexOf('updated_at') + 1).setValue(new Date());
+  bumpRevision_();
+}
+
+/**
+ * Changes a price. Past purchases keep the price recorded at the time, so a
+ * promotion never rewrites what anyone already owes. Caller holds the lock.
+ */
+function setProductPrice_(barcode, name, priceRappen, free) {
+  var price = free === true ? 0 : cleanPrice_(priceRappen);
+  if (price === null) throw new Error('Preis ungueltig');
+  if (free !== true && price === 0) throw new Error('Preis fehlt');
+  var row = findProductRow_(cleanText_(barcode, LIMITS.maxBarcodeChars),
+                            cleanText_(name, LIMITS.maxNameChars));
+  if (row <= 0) throw new Error('Produkt nicht gefunden');
+  var sh = productsSheet_();
+  sh.getRange(row, PRODUCT_COLUMNS.indexOf('price_rappen') + 1).setValue(price);
+  sh.getRange(row, PRODUCT_COLUMNS.indexOf('free') + 1).setValue(free === true);
+  sh.getRange(row, PRODUCT_COLUMNS.indexOf('updated_at') + 1).setValue(new Date());
+  bumpRevision_();
+}
+
 function writeProductRow_(row, product) {
   productsSheet_()
       .getRange(row, 1, 1, PRODUCT_COLUMNS.length)

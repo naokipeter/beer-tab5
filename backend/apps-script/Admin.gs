@@ -80,21 +80,10 @@ function adminSaveProduct(input) {
 /** Price changes are separate from creation so the page can confirm them. */
 function adminChangePrice(barcode, name, priceRappen, free) {
   requireAdmin_();
-  var price = free === true ? 0 : cleanPrice_(priceRappen);
-  if (price === null) throw new Error('Preis ungueltig');
-  if (free !== true && price === 0) throw new Error('Preis fehlt');
-
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('Server beschaeftigt');
   try {
-    var row = findProductRow_(cleanText_(barcode, LIMITS.maxBarcodeChars),
-                              cleanText_(name, LIMITS.maxNameChars));
-    if (row <= 0) throw new Error('Produkt nicht gefunden');
-    var sh = productsSheet_();
-    sh.getRange(row, PRODUCT_COLUMNS.indexOf('price_rappen') + 1).setValue(price);
-    sh.getRange(row, PRODUCT_COLUMNS.indexOf('free') + 1).setValue(free === true);
-    sh.getRange(row, PRODUCT_COLUMNS.indexOf('updated_at') + 1).setValue(new Date());
-    bumpRevision_();
+    setProductPrice_(barcode, name, priceRappen, free);
   } finally {
     lock.releaseLock();
   }
@@ -106,15 +95,7 @@ function adminSetActive(barcode, name, active) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('Server beschaeftigt');
   try {
-    var b = cleanText_(barcode, LIMITS.maxBarcodeChars);
-    var n = cleanText_(name, LIMITS.maxNameChars);
-    if (active === true) assertRoomForActive_(b, n);
-    var row = findProductRow_(b, n);
-    if (row <= 0) throw new Error('Produkt nicht gefunden');
-    var sh = productsSheet_();
-    sh.getRange(row, PRODUCT_COLUMNS.indexOf('active') + 1).setValue(active === true);
-    sh.getRange(row, PRODUCT_COLUMNS.indexOf('updated_at') + 1).setValue(new Date());
-    bumpRevision_();
+    setProductActive_(barcode, name, active);
   } finally {
     lock.releaseLock();
   }

@@ -40,6 +40,13 @@ size_t build_record_purchase(char* out, size_t capacity, const char* token,
 size_t build_void_purchase(char* out, size_t capacity, const char* token,
                            const char* device, const char* transaction_id);
 
+// {"action":"setActive","barcode":..,"name":..,"active":bool}
+// Shelves or archives a product. Identified by barcode when it has one, by name
+// otherwise, which is how a product added at the terminal is found.
+size_t build_set_active(char* out, size_t capacity, const char* token,
+                        const char* device, const char* barcode,
+                        const char* product_name, bool active);
+
 // {"action":"mySummary","resident_id":..}
 // Response: {ok, resident_name, drinks, total_rappen, products:[{name, drinks,
 // total_rappen}]}. One person's own consumption, per product.

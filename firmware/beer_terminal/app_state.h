@@ -92,6 +92,9 @@ uint32_t current_dwell_ms();
 // the screen was drawn.
 void redraw();
 
+// Queues a shelve (active=true) or archive so the change reaches the backend.
+void queue_product_change(int8_t storage_index, bool active);
+
 // Drives timed transitions (mock submit latency, success dwell). Non-blocking.
 void update(uint32_t now_ms);
 

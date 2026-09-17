@@ -234,11 +234,22 @@ bool decode_queue(const uint8_t* in, size_t len, transaction_queue::Entry* entri
     const size_t tail = kTxnId + kBarcode + kName + kResidentId + kResidentName;
     d.price_rappen = static_cast<int32_t>(get_u32(p + tail));
     d.free_item = p[tail + 4] != 0;
-    // Anything other than the void marker is a purchase: a corrupted byte must
-    // not turn a drink into a reversal.
-    d.kind = p[tail + 5] == static_cast<uint8_t>(transaction_queue::Kind::Void)
-                 ? transaction_queue::Kind::Void
-                 : transaction_queue::Kind::Purchase;
+    // Only known markers are honoured; anything else decodes as a purchase,
+    // which is the kind that must never be silently lost to a corrupted byte.
+    switch (p[tail + 5]) {
+      case static_cast<uint8_t>(transaction_queue::Kind::Void):
+        d.kind = transaction_queue::Kind::Void;
+        break;
+      case static_cast<uint8_t>(transaction_queue::Kind::Archive):
+        d.kind = transaction_queue::Kind::Archive;
+        break;
+      case static_cast<uint8_t>(transaction_queue::Kind::Restore):
+        d.kind = transaction_queue::Kind::Restore;
+        break;
+      default:
+        d.kind = transaction_queue::Kind::Purchase;
+        break;
+    }
     p += kQueueRecord;
   }
   *out_count = static_cast<uint8_t>(count);

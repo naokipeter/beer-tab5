@@ -305,6 +305,10 @@ void dispatch(Event e) {
 
     case State::ConfirmArchive:
       if (e == Event::ArchiveConfirmed) {
+        // Queue it for the server, then apply locally for immediate feedback.
+        // Until now this only changed the local copy, so the next sync brought
+        // the beer straight back.
+        queue_product_change(g_ctx.archive_storage_index, false);
         product_catalog::archive(g_ctx.archive_storage_index);
         reset_context();
         enter(State::SelectingProduct);
@@ -419,6 +423,21 @@ void update(uint32_t now_ms) {
     default:
       break;
   }
+}
+
+void queue_product_change(int8_t storage_index, bool active) {
+  const product_catalog::Product* p = product_catalog::at_storage(storage_index);
+  if (!p || !backend::configured() || transaction_queue::full()) return;
+
+  transaction_queue::Entry e = {};
+  snprintf(e.transaction_id, sizeof(e.transaction_id), "%s-%08lx-p",
+           settings::device_id, static_cast<unsigned long>(millis()));
+  snprintf(e.barcode, sizeof(e.barcode), "%s", p->barcode);
+  snprintf(e.product_name, sizeof(e.product_name), "%s", p->name);
+  e.kind = active ? transaction_queue::Kind::Restore : transaction_queue::Kind::Archive;
+  if (!transaction_queue::push(e)) return;
+  transaction_queue::flush();
+  backend::send_queued_now();
 }
 
 }  // namespace app_state

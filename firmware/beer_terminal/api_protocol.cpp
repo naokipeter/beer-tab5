@@ -97,6 +97,19 @@ size_t build_void_purchase(char* out, size_t capacity, const char* token,
   return serialise(doc, out, capacity);
 }
 
+size_t build_set_active(char* out, size_t capacity, const char* token,
+                        const char* device, const char* barcode,
+                        const char* product_name, bool active) {
+  JsonDocument doc;
+  doc["action"] = "setActive";
+  doc["token"] = token;
+  doc["device"] = device;
+  doc["barcode"] = barcode ? barcode : "";
+  doc["name"] = product_name ? product_name : "";
+  doc["active"] = active;
+  return serialise(doc, out, capacity);
+}
+
 size_t build_my_summary(char* out, size_t capacity, const char* token,
                         const char* device, const char* resident_id) {
   JsonDocument doc;

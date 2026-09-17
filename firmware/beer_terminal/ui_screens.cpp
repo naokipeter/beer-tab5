@@ -124,6 +124,8 @@ void on_restore(lv_event_t* e) {
   const int8_t storage =
       product_catalog::storage_index_of_archived(static_cast<uint8_t>(from_ud(e)));
   if (product_catalog::restore(storage)) {
+    // Queue it before announcing success, so the server learns about it too.
+    app_state::queue_product_change(storage, true);
     app_state::dispatch(Event::ProductRestored);
   }
 }
