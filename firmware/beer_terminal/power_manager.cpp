@@ -32,12 +32,8 @@ void begin() {
 
 void note_activity(uint32_t now_ms) {
   g_last_activity = now_ms;
-  if (!display_ui::awake()) {
-    display_ui::set_awake(true);
-    // The touch that woke the screen must not also select a beer, so it is
-    // consumed here rather than passed on.
-    app_state::dispatch(app_state::Event::Wake);
-  }
+  // Waking is a state change; the backlight follows from it.
+  if (!display_ui::awake()) app_state::dispatch(app_state::Event::Wake);
 }
 
 void update(uint32_t now_ms) {
@@ -50,7 +46,6 @@ void update(uint32_t now_ms) {
   if (static_cast<int32_t>(now_ms - (g_last_activity + settings::display_off_ms)) < 0) {
     return;
   }
-  display_ui::set_awake(false);
   app_state::dispatch(app_state::Event::Sleep);
 }
 

@@ -61,7 +61,7 @@ void log_cb(lv_log_level_t, const char* buf) {
 
 bool begin() {
   M5.Display.setRotation(settings::display_rotation);
-  M5.Display.setBrightness(180);
+  M5.Display.setBrightness(settings::display_brightness);
   M5.Display.fillScreen(TFT_BLACK);
 
   lv_init();
@@ -106,12 +106,12 @@ void set_awake(bool on) {
     // Block the waking press so it cannot also hit whatever the newly drawn
     // screen puts under the finger.
     g_ignore_until_release = true;
-    M5.Display.wakeup();
-    M5.Display.setBrightness(180);
+    M5.Display.setBrightness(settings::display_brightness);
   } else {
-    // Brightness first, then panel sleep: the reverse order flashes.
+    // The Tab5 backlight is a PWM light on GPIO22 (M5GFX), so brightness 0 is
+    // the actual saving. Panel sleep is left alone: whether it is implemented
+    // for this DSI panel is unverified, and it is not where the power goes.
     M5.Display.setBrightness(0);
-    M5.Display.sleep();
   }
   Serial.printf("[power] display %s\n", on ? "on" : "off");
 }

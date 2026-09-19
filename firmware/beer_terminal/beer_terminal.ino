@@ -24,6 +24,10 @@
 namespace {
 
 void on_state_change(app_state::State, app_state::State current) {
+  // Tie the backlight to the state rather than to whoever caused the change.
+  // SLEEPING is reachable from the idle timer and from the catalog's cancel
+  // button, and only the first used to turn the screen off.
+  display_ui::set_awake(current != app_state::State::Sleeping);
   ui_screens::show(current);
 }
 

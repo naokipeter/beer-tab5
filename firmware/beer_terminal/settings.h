@@ -71,6 +71,8 @@ inline constexpr uint8_t max_queued_transactions = 64;
 // replaces this timer with a sync on wake.
 inline constexpr uint32_t sync_interval_ms = 10UL * 60UL * 1000UL;
 
+inline constexpr uint8_t display_brightness = 180;
+
 // Idle time before the backlight goes off. The backlight dominates the power
 // budget of a 5-inch panel, so switching it off is the large, safe saving —
 // well before any sleep mode is involved.
