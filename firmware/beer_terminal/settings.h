@@ -67,8 +67,12 @@ inline constexpr uint32_t danger = 0xC0392B;
 // every entry is a drink somebody was already told was booked.
 inline constexpr uint8_t max_queued_transactions = 64;
 
-// How often the catalog is refreshed while the device is awake. Milestone 10
-// replaces this timer with a sync on wake.
+// Shortest gap between two syncs triggered by waking, so repeated taps do not
+// hammer the backend.
+inline constexpr uint32_t sync_on_wake_min_ms = 60UL * 1000UL;
+
+// How often the catalog is refreshed while somebody is using the terminal.
+// Suspended while asleep; waking triggers one instead.
 inline constexpr uint32_t sync_interval_ms = 10UL * 60UL * 1000UL;
 
 inline constexpr uint8_t display_brightness = 180;

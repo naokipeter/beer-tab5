@@ -41,6 +41,12 @@ bool send_queued_now();
 // Asks for a catalog and resident refresh. Results are applied by update().
 bool request_sync();
 
+// Whether somebody is actually using the terminal. While inactive the periodic
+// refresh is suspended, so the radio is not woken every ten minutes to fetch
+// prices nobody is looking at. Queued transactions still go out: a purchase
+// must reach the backend whether or not the screen is on.
+void set_active(bool active);
+
 // Fetches one resident's own consumption for the overview screen. Never
 // preempts a purchase; the queue is drained first.
 enum class MySummaryState : uint8_t { Idle, Loading, Ready, Unavailable };

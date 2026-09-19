@@ -30,6 +30,7 @@ char g_error[64] = {};
 bool g_duplicate = false;
 
 uint32_t g_last_sync = 0;
+bool g_active = true;
 // Backoff between queue drain attempts, so an outage does not spin the radio.
 uint32_t g_retry_after = 0;
 uint8_t g_send_failures = 0;
@@ -170,6 +171,19 @@ bool request_my_summary(const char* resident_id) {
 MySummaryState my_summary_state() { return g_my_state; }
 const api_protocol::MySummary& my_summary() { return g_my_summary; }
 
+void set_active(bool active) {
+  if (active == g_active) return;
+  g_active = active;
+  if (!active) return;
+  // Coming back: refresh now rather than at the next tick, but not on every
+  // single tap — a repeated touch should not hammer the backend.
+  const uint32_t now = millis();
+  if (g_last_sync == 0 ||
+      static_cast<int32_t>(now - (g_last_sync + settings::sync_on_wake_min_ms)) >= 0) {
+    request_sync();
+  }
+}
+
 bool request_sync() {
   // A sync never preempts a purchase.
   if (!configured() || g_op != Op::None) return false;
@@ -247,8 +261,10 @@ void update(uint32_t now_ms) {
       if (static_cast<int32_t>(now_ms - g_retry_after) >= 0) send_queued_now();
       return;
     }
-    // Periodic refresh. Milestone 10 replaces this timer with a sync on wake.
-    if (static_cast<int32_t>(now_ms - (g_last_sync + settings::sync_interval_ms)) >= 0) {
+    // Only while someone is there. Asleep, the catalog cannot be read and a
+    // fresh price changes nothing, so waking the radio for it is pure cost.
+    if (g_active &&
+        static_cast<int32_t>(now_ms - (g_last_sync + settings::sync_interval_ms)) >= 0) {
       request_sync();
     }
     return;

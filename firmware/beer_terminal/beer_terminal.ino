@@ -25,6 +25,9 @@ namespace {
 
 void on_state_change(app_state::State, app_state::State current) {
   const bool sleeping = current == app_state::State::Sleeping;
+  // The radio follows the same signal as the backlight: nobody is reading a
+  // price list on a dark screen.
+  backend::set_active(!sleeping);
   if (sleeping) {
     // Dark first; what is drawn underneath is never seen.
     display_ui::set_awake(false);
