@@ -998,6 +998,12 @@ void build_admin() {
 void build_waking() {
   lv_obj_t* scr = build_root();
   build_header(scr, "Was trinksch?", false);
+  // A static line, not a spinner. A spinner needs a refresh per frame, and a
+  // refresh is exactly what is slow here, so it would tick about once a second
+  // and look broken. This says the same thing and costs one draw.
+  lv_obj_t* l = make_label(scr, "Einen Moment...", settings::theme::text_muted,
+                           &font_de_32);
+  lv_obj_center(l);
 }
 
 void build_sleeping() {
@@ -1020,6 +1026,7 @@ void begin() {
 }
 
 void show(State current) {
+  const uint32_t started = millis();
   switch (current) {
     case State::Sleeping:          build_sleeping();        break;
     case State::Waking:            build_waking();          break;
@@ -1037,6 +1044,13 @@ void show(State current) {
     case State::Summary:           build_summary();         break;
     case State::Error:             build_error();           break;
     case State::Admin:             build_admin();           break;
+  }
+  // Object construction only. The pixels arrive on the next refresh, which is
+  // timed separately in display_ui.
+  const uint32_t took = millis() - started;
+  if (took > 20) {
+    Serial.printf("[ui] %s built in %lu ms\n", app_state::state_name(current),
+                  static_cast<unsigned long>(took));
   }
 }
 

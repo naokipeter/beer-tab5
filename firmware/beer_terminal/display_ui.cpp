@@ -118,7 +118,15 @@ void set_awake(bool on) {
 
 bool awake() { return g_awake; }
 
-void refresh_now() { lv_refr_now(g_display); }
+void refresh_now() {
+  // Timed separately from building the screen: those are different costs with
+  // different fixes, and "the screen takes three seconds" says nothing about
+  // which one to attack.
+  const uint32_t started = millis();
+  lv_refr_now(g_display);
+  Serial.printf("[ui] full refresh %lu ms\n",
+                static_cast<unsigned long>(millis() - started));
+}
 
 void update() { lv_timer_handler(); }
 
