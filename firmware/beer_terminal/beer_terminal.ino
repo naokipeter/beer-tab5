@@ -12,6 +12,7 @@
 #include "backend.h"
 #include "device_storage.h"
 #include "display_ui.h"
+#include "power_manager.h"
 #include "product_catalog.h"
 #include "purchase_log.h"
 #include "resident_directory.h"
@@ -53,6 +54,7 @@ void setup() {
   backend::begin();
 
   // Registered after the display exists, so the first transition can draw.
+  power_manager::begin();
   app_state::begin(on_state_change);
   Serial.printf("[boot] device=%s active=%u archived=%u residents=%u (%s)\n",
                 settings::device_id,
@@ -65,6 +67,9 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
   M5.update();
+  // Any contact counts as activity, including the one that wakes the screen.
+  if (M5.Touch.getCount() > 0) power_manager::note_activity(now);
+  power_manager::update(now);
   wifi_manager::update(now);
   backend::update(now);
   app_state::update(now);

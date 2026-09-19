@@ -28,8 +28,18 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   lv_display_flush_ready(disp);
 }
 
+// Set when the screen is woken by a touch. The same press must not also land on
+// whatever the newly drawn screen put under the finger, so input stays blocked
+// until the finger comes off.
+bool g_ignore_until_release = false;
+
 void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
   // M5.update() runs in the main loop; this only reads the latest sample.
+  if (g_ignore_until_release) {
+    if (M5.Touch.getCount() == 0) g_ignore_until_release = false;
+    data->state = LV_INDEV_STATE_RELEASED;
+    return;
+  }
   if (M5.Touch.getCount() > 0) {
     const auto t = M5.Touch.getDetail(0);
     data->point.x = t.x;
@@ -84,6 +94,29 @@ bool begin() {
                 static_cast<unsigned>(settings::screen_h));
   return true;
 }
+
+namespace {
+bool g_awake = true;
+}  // namespace
+
+void set_awake(bool on) {
+  if (on == g_awake) return;
+  g_awake = on;
+  if (on) {
+    // Block the waking press so it cannot also hit whatever the newly drawn
+    // screen puts under the finger.
+    g_ignore_until_release = true;
+    M5.Display.wakeup();
+    M5.Display.setBrightness(180);
+  } else {
+    // Brightness first, then panel sleep: the reverse order flashes.
+    M5.Display.setBrightness(0);
+    M5.Display.sleep();
+  }
+  Serial.printf("[power] display %s\n", on ? "on" : "off");
+}
+
+bool awake() { return g_awake; }
 
 void update() { lv_timer_handler(); }
 

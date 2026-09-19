@@ -71,6 +71,15 @@ inline constexpr uint8_t max_queued_transactions = 64;
 // replaces this timer with a sync on wake.
 inline constexpr uint32_t sync_interval_ms = 10UL * 60UL * 1000UL;
 
+// Idle time before the backlight goes off. The backlight dominates the power
+// budget of a 5-inch panel, so switching it off is the large, safe saving —
+// well before any sleep mode is involved.
+inline constexpr uint32_t display_off_ms = 60000;
+
+// How often free memory is logged. A crash after hours of idling is almost
+// always a leak, and a leak is only visible as a trend.
+inline constexpr uint32_t heap_log_interval_ms = 30000;
+
 // Simulated backend latency used when no backend is configured, in milliseconds.
 inline constexpr uint32_t mock_submit_ms = 800;
 // How long SUCCESS stays on screen before returning to the catalog. This is the
