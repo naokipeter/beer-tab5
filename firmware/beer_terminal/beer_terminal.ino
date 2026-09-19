@@ -36,6 +36,9 @@ void on_state_change(app_state::State, app_state::State current) {
   if (!display_ui::awake()) {
     // Draw before lighting. Turning the backlight on first showed the previous
     // screen until the next refresh, which read as "tap again".
+    //
+    // This runs on WAKING, whose screen is just the header, so the panel lights
+    // up within a frame of the touch. The catalog then fills in beneath it.
     display_ui::refresh_now();
     display_ui::set_awake(true);
   }

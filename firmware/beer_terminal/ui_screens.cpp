@@ -991,6 +991,15 @@ void build_admin() {
                       settings::theme::text);
 }
 
+// Shown the instant a touch wakes the terminal, before the catalog is built.
+// It is the catalog's own header and nothing else: cheap to draw, so the panel
+// lights up immediately, and identical to what the catalog puts there, so the
+// tiles simply appear beneath it instead of the screen changing twice.
+void build_waking() {
+  lv_obj_t* scr = build_root();
+  build_header(scr, "Was trinksch?", false);
+}
+
 void build_sleeping() {
   // Deliberately empty. The backlight is off, so nothing here is ever seen, and
   // an instruction to tap would only be visible in the moment it is already
@@ -1013,7 +1022,7 @@ void begin() {
 void show(State current) {
   switch (current) {
     case State::Sleeping:          build_sleeping();        break;
-    case State::Waking:                                     break;
+    case State::Waking:            build_waking();          break;
     case State::SelectingProduct:  build_catalog();         break;
     case State::LookingUp:         build_submitting();      break;
     case State::ProductFound:      build_catalog();         break;
