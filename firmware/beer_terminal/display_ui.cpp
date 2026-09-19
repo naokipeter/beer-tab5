@@ -118,6 +118,8 @@ void set_awake(bool on) {
 
 bool awake() { return g_awake; }
 
+void refresh_now() { lv_refr_now(g_display); }
+
 void update() { lv_timer_handler(); }
 
 }  // namespace display_ui

@@ -24,11 +24,21 @@
 namespace {
 
 void on_state_change(app_state::State, app_state::State current) {
-  // Tie the backlight to the state rather than to whoever caused the change.
-  // SLEEPING is reachable from the idle timer and from the catalog's cancel
-  // button, and only the first used to turn the screen off.
-  display_ui::set_awake(current != app_state::State::Sleeping);
+  const bool sleeping = current == app_state::State::Sleeping;
+  if (sleeping) {
+    // Dark first; what is drawn underneath is never seen.
+    display_ui::set_awake(false);
+    ui_screens::show(current);
+    return;
+  }
+
   ui_screens::show(current);
+  if (!display_ui::awake()) {
+    // Draw before lighting. Turning the backlight on first showed the previous
+    // screen until the next refresh, which read as "tap again".
+    display_ui::refresh_now();
+    display_ui::set_awake(true);
+  }
 }
 
 }  // namespace

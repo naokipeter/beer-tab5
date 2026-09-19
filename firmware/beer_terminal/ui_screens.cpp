@@ -992,13 +992,12 @@ void build_admin() {
 }
 
 void build_sleeping() {
+  // Deliberately empty. The backlight is off, so nothing here is ever seen, and
+  // an instruction to tap would only be visible in the moment it is already
+  // being obeyed. Waking is handled from the raw touch in power_manager, so the
+  // screen needs no control of its own.
   lv_obj_t* scr = build_root();
-  lv_obj_t* l = make_label(scr, "Bildschirm tippen", settings::theme::text_muted,
-                           &font_de_28);
-  lv_obj_center(l);
-  lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(scr, on_event_button, LV_EVENT_CLICKED,
-                      as_ud(static_cast<uintptr_t>(Event::Wake)));
+  lv_obj_set_style_bg_color(scr, col(0x000000), 0);
 }
 
 }  // namespace

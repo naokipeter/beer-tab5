@@ -16,4 +16,9 @@ void update();
 void set_awake(bool awake);
 bool awake();
 
+// Renders pending changes immediately instead of waiting for the next refresh.
+// Used to get the new screen onto the panel before the backlight comes back, so
+// waking never shows the previous one.
+void refresh_now();
+
 }  // namespace display_ui
