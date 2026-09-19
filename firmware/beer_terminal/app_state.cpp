@@ -248,10 +248,18 @@ bool failure_simulated() { return g_fail_next_submit; }
 void dispatch(Event e) {
   switch (g_state) {
     case State::Sleeping:
-      if (e == Event::Wake) enter(State::Waking);
+      if (e == Event::Wake) {
+        // Straight through. WAKING is a transient marker — it exists so the
+        // change handler can bring the backlight back and, later, restore
+        // peripherals — and nothing generates a second event to move it on, so
+        // stopping there left the terminal lit on the sleep screen.
+        enter(State::Waking);
+        enter(State::SelectingProduct);
+      }
       break;
 
     case State::Waking:
+      // Only reached if something dispatched into it; never rested in.
       enter(State::SelectingProduct);
       break;
 
