@@ -998,12 +998,9 @@ void build_admin() {
 void build_waking() {
   lv_obj_t* scr = build_root();
   build_header(scr, "Was trinksch?", false);
-  // A static line, not a spinner. A spinner needs a refresh per frame, and a
-  // refresh is exactly what is slow here, so it would tick about once a second
-  // and look broken. This says the same thing and costs one draw.
-  lv_obj_t* l = make_label(scr, "Einen Moment...", settings::theme::text_muted,
-                           &font_de_32);
-  lv_obj_center(l);
+  // Nothing else. A full refresh measures about 110 ms, so the tiles follow
+  // within a quarter of a second of the touch and any waiting message would be
+  // gone before it could be read.
 }
 
 void build_sleeping() {

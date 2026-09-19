@@ -124,8 +124,12 @@ void refresh_now() {
   // which one to attack.
   const uint32_t started = millis();
   lv_refr_now(g_display);
-  Serial.printf("[ui] full refresh %lu ms\n",
-                static_cast<unsigned long>(millis() - started));
+  // Around 110 ms when healthy, so only complain when it is not: quiet in
+  // normal use, loud if something makes rendering slow again.
+  const uint32_t took = millis() - started;
+  if (took > 200) {
+    Serial.printf("[ui] full refresh %lu ms\n", static_cast<unsigned long>(took));
+  }
 }
 
 void update() { lv_timer_handler(); }
