@@ -1,177 +1,112 @@
 # beer-tab5
 
-A battery-powered beer tally for a fridge door, on an M5Stack Tab5.
+A beer tally for a fridge door, on an M5Stack Tab5. Tap the beer, tap your name,
+done. Purchases go to a Google Sheet through a small Apps Script backend.
 
-Milestone 7: the device syncs its catalog over HTTPS and records purchases
-against the backend, with the radio powered down when idle. The Apps Script that
-answers those requests is milestone 8, so nothing is verified end to end yet.
-Milestone 6: the catalog and resident list persist across reboots on LittleFS.
-Milestone 3 built the LVGL interface and the explicit state machine. Milestones 1
-to 3 are confirmed working on the device. There is no camera, networking, backend
-deployment, offline queue or sleep implementation yet; the catalog is still
-seeded from a compiled-in mock.
+## How it works
 
-The Tab5 camera is not reachable from the Arduino framework — verified by
-compilation, see [the hardware audit](docs/hardware-audit.md). Barcode capture
-therefore moves to a phone management page, and the terminal itself is
-catalog-first: residents tap a product tile rather than scanning. See
-[the architecture proposal](docs/architecture.md) and
-[milestone 3](docs/milestone-3.md).
+The fridge holds a handful of beers, so the terminal shows them as large tiles
+rather than asking you to scan anything. The grid adapts to how many there are:
+one beer fills the screen, two split it, eight make a 2×4 grid.
+
+There is **no barcode scanning on the device**. The Tab5 camera is not reachable
+from the Arduino framework — the SDK ships the MIPI-CSI and ISP drivers but no
+sensor stack, verified by compilation in [the hardware audit](docs/hardware-audit.md).
+Barcodes are scanned on a phone instead, through a management page served by the
+same Apps Script, which also looks the product up in Open Food Facts. Tapping one
+of a handful of tiles turns out to be faster than aiming a camera anyway.
+
+Every purchase is written to flash **before** it is sent and keeps its
+transaction id across retries, so a dead router or a backend outage cannot lose a
+drink and a retry cannot record one twice.
+
+## Setup
+
+**Hardware.** M5Stack Tab5 (ESP32-P4, with the ESP32-C6 for Wi-Fi).
+
+**Libraries**, pinned. For the CLI build:
+
+```sh
+./tools/setup.sh
+```
+
+Arduino IDE reads a different library folder, so if you build from the IDE:
+
+```sh
+./tools/setup-ide.sh
+```
+
+Then restart the IDE so it re-reads its library index.
+
+**Backend.** Follow [backend/README.md](backend/README.md): create the
+spreadsheet, paste in the Apps Script sources, set the script properties and
+deploy twice — once anonymously for the terminal, once Google-restricted for the
+management page.
+
+**Secrets.** Copy `firmware/beer_terminal/secrets.example.h` to `secrets.h` and
+fill in the Wi-Fi credentials, the Apps Script URL and the device token. The file
+is git-ignored. Without it the firmware still builds and runs, with purchases
+simulated locally; the admin screen says so.
 
 ## Build
 
-### Arduino IDE
-
-Open `firmware/beer_terminal/beer_terminal.ino`. Install M5Stack board package
-3.3.9, M5Unified 0.2.22, M5GFX 0.2.29, lvgl 9.2.2 and ArduinoJson 7.4.3 using the IDE's
-Boards/Library Managers. LVGL reads the sketch-local `lv_conf.h`; the
-`build_opt.h` beside the sketch supplies `-DLV_CONF_INCLUDE_SIMPLE` for that.
-
-**The IDE and the CLI use different library folders.** Arduino IDE reads your
-sketchbook (`~/Documents/Arduino/libraries`), while `tools/build.sh` reads the
-project-local `.arduino/user/libraries`. Installing or upgrading a library for
-one does not affect the other, so a milestone that adds a dependency builds on
-the CLI and fails in the IDE with a missing header.
-
-Run **`./tools/setup-ide.sh`** to install the whole pinned set into the
-sketchbook, then restart the IDE so it re-reads its library index. It keeps the
-same list as `tools/setup.sh`. LVGL in particular renamed most of its API
-between 8 and 9, so an older sketchbook copy produces dozens of
-"not declared in this scope" errors; `ui_lvgl.h` turns that into a single
-explicit message. In the IDE, open Library Manager, find lvgl, and select
-version 9.2.2 from the version dropdown.
-Select M5Tab5 and the connected port under Tools; enable PSRAM and USB CDC On
-Boot, select Hardware CDC and JTAG for USB Mode, and select the chip variant
-matching the device. Click Verify or Upload. Serial Monitor uses 115200 baud.
-The sketch accepts C++17 or newer, including the board package's default C++20;
-no custom language flags are needed in Arduino IDE.
-
-### Arduino CLI
-
-Tested on Apple Silicon macOS with Arduino CLI **1.1.1**, official
-**m5stack:esp32@3.3.9**, **M5Unified@0.2.22**, **M5GFX@0.2.29**, **lvgl@9.2.2**,
-**ArduinoJson@7.4.3**.
-Application and library compilation explicitly uses GNU C++17. Core prebuilt
-ESP-IDF libraries retain their upstream compilation settings.
-
 ```sh
-cd beer-tab5
-./tools/setup.sh
 ./tools/build.sh
-./tools/verify-examples.sh
 ```
 
-On another computer, change the `cd` path. Install Arduino CLI 1.1.1 from
-[Arduino's official release](https://github.com/arduino/arduino-cli/releases/tag/v1.1.1)
-and place it on PATH, or set `ARDUINO_CLI` to its executable. The wrapper also
-finds the CLI bundled with Arduino IDE on macOS. It prints the version during setup.
-Setup installs pinned dependencies through the official package/library indexes;
-initial installation requires internet and several GB of free disk space.
+Tested with Arduino CLI 1.1.1 and **m5stack:esp32@3.3.9**, **M5Unified@0.2.22**,
+**M5GFX@0.2.29**, **lvgl@9.2.2**, **ArduinoJson@7.4.3**. Application and library
+code is compiled as GNU C++17; the core's prebuilt ESP-IDF libraries keep their
+upstream settings. The sketch also accepts C++20, so Arduino IDE needs no custom
+flags — open `firmware/beer_terminal/beer_terminal.ino` and press Verify.
 
-All writable CLI data, libraries and downloads live under ignored `.arduino/`;
-build products live under ignored `build/`. On this machine only, existing board
-packages are reused through `.arduino/data/packages`, a symlink to the installed
-Arduino15 packages. Cached official library ZIPs were extracted locally. A fresh
-checkout uses ordinary project-local package installation instead. Setup refuses
-to install a missing core through the shared symlink.
-
-The full board selection is:
-
-```text
-m5stack:esp32:m5stack_tab5:ChipVariant=prev3,PSRAM=enabled,USBMode=hwcdc,CDCOnBoot=cdc,PartitionScheme=default
-```
-
-`prev3` is the official board default, **not a claim about your device's silicon**.
-Before uploading, determine chip revision from the device/flash tool. For silicon
-v3.00 or newer, build with `CHIP_VARIANT=postv3 ./tools/build.sh` and use the matching
-variant when uploading. Do not force-flash a binary rejected for chip revision.
-No serial port is stored in configuration.
-
-## Fonts
-
-The UI draws with Montserrat subsets that include German and Swiss-French
-letters; LVGL's built-in fonts are ASCII-only. They are committed as
-`firmware/beer_terminal/font_de_*.c`. Regenerate with `./tools/generate-fonts.sh`
-after changing the glyph set — it needs Node and the installed lvgl library.
-
-## Host checks
-
-`./tools/test.sh` builds and runs the host test suites on the Mac — no Tab5 and
-no Arduino toolchain needed. It covers the adaptive grid geometry (layout for one
-to eight products, tiles inside the margins and clear of the header and footer, a
-centred partial row) and the persistence format (round trip, and rejection of
-corrupted, truncated, foreign and over-capacity blobs).
-
-## Physical verification — milestone 3
-
-Upload as below, then walk the procedure in
-[docs/milestone-3.md](docs/milestone-3.md): the eight-tile catalog, a purchase
-through to the green confirmation, the cancel paths, the ad hoc product screen,
-and the simulated-failure retry reached by long-pressing the header. Serial at
-115200 prints every transition as `[state] FROM -> TO`.
-
-The open hardware questions are colour order in the flush callback, touch
-accuracy against LVGL hit testing, redraw latency, and whether a 300 x 268 tile
-is genuinely thumb-sized in front of a fridge.
-
-## Physical verification — milestone 2
-
-In Arduino IDE, reopen `firmware/beer_terminal/beer_terminal.ino` and click Upload
-using the same settings that worked for milestone 1. No new libraries are needed.
-Turn the device 180 degrees from its previous position. The text should now be
-upright. Tap the four blue corner buttons: only the touched corner should turn
-green and show OK. After all four, the status should read "All corners OK".
-Drag a finger inside the central outlined area: the cyan dot should follow it
-without mirroring or offset. Tap "Start again" to clear the results and repeat.
-Serial Monitor at 115200 baud reports startup dimensions and touch availability.
-The on-screen sample counter should keep increasing. Drag for at least 10 seconds;
-if tracking stops, note whether Samples still increases, whether Contact says yes,
-and whether x/y change. Report orientation, corner response and dot alignment before the
-LVGL milestone; this is the requested hardware-observation gate.
-
-The rotation is centralized in `settings.h` (`display_rotation = 3`, previously 1).
-M5GFX automatically transforms touch coordinates with the display rotation.
-This test remains awake; it does not test sleep or wake from touch.
-
-### Optional CLI upload
-
-1. Connect Tab5 over a USB data cable. Run `./tools/arduino.sh board list`.
-2. Set `TAB5_PORT` to its reported port, and `CHIP_VARIANT` to `prev3` or `postv3`.
-3. Build and upload explicitly:
+To upload from the CLI:
 
 ```sh
-CHIP_VARIANT="$CHIP_VARIANT" ./tools/build.sh
-./tools/arduino.sh upload \
-  --fqbn "m5stack:esp32:m5stack_tab5:ChipVariant=$CHIP_VARIANT,PSRAM=enabled,USBMode=hwcdc,CDCOnBoot=cdc,PartitionScheme=default" \
-  --port "$TAB5_PORT" --input-dir "build/$CHIP_VARIANT/beer_terminal" \
-  firmware/beer_terminal
-./tools/arduino.sh monitor --port "$TAB5_PORT" --config baudrate=115200
+./tools/arduino.sh board list
 ```
 
-4. Verify the touch test described above and PSRAM detection. If the initial
-   serial message is missed while USB enumerates, reset with the monitor open.
-5. Report screen output, PSRAM, chip revision and any resets. Display and touch
-   examples have separate build directories; compile success does not verify
-   real display revisions or touch calibration.
+```sh
+TAB5_PORT=/dev/cu.usbmodemXXXX CHIP_VARIANT=prev3 ./tools/upload.sh
+```
 
-Stop here for confirmation of milestone 2 before further hardware-dependent work.
-The firmware stays awake: battery current and wake latency have not been measured.
+Serial runs at 115200.
 
-## Files added
+## Tests
 
-- `firmware/beer_terminal/`: sketch, state machine, catalog, LVGL port and screens,
-  `lv_conf.h`, centralized settings, secrets example.
-- `tests/`, `tools/test.sh`: host tests for the grid geometry and the persistence format.
-- `arduino-cli.yaml`, `tools/`: official package URL, pinned setup, build and example checks.
-- `docs/`: hardware/API findings, proposed architecture, compilation evidence.
-- `backend/README.md`: reserved backend scope for milestone 8.
-- `.gitignore`: excludes credentials, dependencies and build products.
+```sh
+./tools/test.sh
+```
 
-To configure a real device, copy `firmware/beer_terminal/secrets.example.h` to
-`secrets.h` and fill in the Wi-Fi credentials, the Apps Script URL and the device
-token. Without it the firmware still builds and runs; purchases are simulated
-locally and the admin screen says so.
+Runs on the Mac, no board required. Several modules are deliberately free of
+Arduino and LVGL so they can be exercised here: the adaptive grid geometry, the
+on-flash format for the catalog, queue and summary, and the wire protocol
+including its host allow-lists. The Apps Script validators run under Node in the
+same pass.
 
-Never commit `secrets.h` or `wifi_secrets.h`. No credentials are needed to build
-milestone 1. Future endpoint/token configuration belongs in the ignored secrets
-file; Wi-Fi provisioning is separate. No service-account credentials will be used.
+## Layout
+
+| | |
+|---|---|
+| `firmware/beer_terminal/` | the sketch: state machine, catalog, queue, LVGL screens, networking |
+| `backend/apps-script/` | the web app and the phone management page |
+| `tests/`, `tools/test.sh` | host tests |
+| `tools/` | pinned setup, build, upload, font generation |
+| `docs/` | design decisions and what each milestone changed |
+
+## Status
+
+Working on the device: the interface and state machine, a catalog that survives
+reboots, Wi-Fi and the backend client, the Apps Script and spreadsheet, the
+offline queue, per-person consumption, managing prices and archiving from the
+terminal, and the backlight switching off when idle.
+
+Not done: product photos on the device, manual barcode entry, a resident editor
+(residents are maintained in the sheet), and real sleep. The device currently
+turns its screen and radio off when idle but the SoC stays awake; choosing a
+sleep mode needs current measurements on real hardware. Touch cannot wake the
+P4 from deep sleep on this board — the touch interrupt is on GPIO23, outside the
+sixteen RTC-capable pins — so light sleep is the realistic option.
+
+[docs/](docs/) has the reasoning, including the things that were tried and
+reverted.
