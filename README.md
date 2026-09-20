@@ -1,4 +1,6 @@
-# Tab5 beer terminal
+# beer-tab5
+
+A battery-powered beer tally for a fridge door, on an M5Stack Tab5.
 
 Milestone 7: the device syncs its catalog over HTTPS and records purchases
 against the backend, with the radio powered down when idle. The Apps Script that
@@ -53,7 +55,7 @@ Application and library compilation explicitly uses GNU C++17. Core prebuilt
 ESP-IDF libraries retain their upstream compilation settings.
 
 ```sh
-cd /Users/nlpeter/Sites/tab5-beer-terminal
+cd beer-tab5
 ./tools/setup.sh
 ./tools/build.sh
 ./tools/verify-examples.sh

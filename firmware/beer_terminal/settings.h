@@ -43,8 +43,8 @@ struct Resident {
 // these are used until the first successful sync, and on a device that has
 // never reached the backend. There is deliberately no guest entry: the host pays.
 inline constexpr Resident default_residents[] = {
-  {"r1", "Naoki"},  {"r2", "Lena"},   {"r3", "Tobias"}, {"r4", "Miriam"},
-  {"r5", "Samuel"}, {"r6", "Anna"},   {"r7", "David"},
+  {"r1", "Person 1"}, {"r2", "Person 2"}, {"r3", "Person 3"}, {"r4", "Person 4"},
+  {"r5", "Person 5"}, {"r6", "Person 6"}, {"r7", "Person 7"},
 };
 inline constexpr uint8_t default_resident_count =
     sizeof(default_residents) / sizeof(default_residents[0]);

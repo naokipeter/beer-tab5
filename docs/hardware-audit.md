@@ -4,7 +4,7 @@
 
 The supplied working directory was a collection of projects, not a Git repository.
 No existing Tab5 project was found in its filename/directory scan. A separate
-`tab5-beer-terminal` repository was created. No applicable parent AGENTS.md was found.
+`beer-tab5` repository was created. No applicable parent AGENTS.md was found.
 Git and Homebrew are installed; `arduino-cli` is absent from PATH, but Arduino IDE
 bundles CLI 1.1.1. Arduino15 contains the official M5Stack 3.3.9 core/toolchain and
 cached M5Unified 0.2.22 / M5GFX 0.2.29 ZIPs. The Documents/Arduino sketchbook was
