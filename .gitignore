@@ -4,8 +4,11 @@ build/
 secrets.h
 wifi_secrets.h
 *.local.*
-# Editor swap and backup files. A swap file of secrets.h holds the secrets.
+# Editor swap, backup and undo files. Any of them taken from secrets.h holds
+# the secrets in clear. Note that .gitignore does not untrack a file that is
+# already in the index, which is how secrets.h~ reached this history.
 *.swp
 *.swo
 *~
+*.un~
 .*.sw?
